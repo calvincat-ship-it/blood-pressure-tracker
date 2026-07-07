@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bp-tracker-v2';
+const CACHE_NAME = 'bp-tracker-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -28,7 +28,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: 'no-store' })
       .then((response) => {
         if (response.ok) {
           const clone = response.clone();
