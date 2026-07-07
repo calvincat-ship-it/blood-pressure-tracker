@@ -477,3 +477,51 @@ input:focus, select:focus {
   color: var(--text-muted);
   margin: 0;
 }
+
+.photo-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.photo-preview-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#photoPreview {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.history-actions button.view-photo-btn {
+  color: var(--primary);
+}
+
+.photo-viewer {
+  align-items: center;
+}
+
+.photo-viewer-inner {
+  position: relative;
+  max-width: 92vw;
+  max-height: 88vh;
+}
+
+.photo-viewer-inner img {
+  display: block;
+  max-width: 92vw;
+  max-height: 88vh;
+  border-radius: 10px;
+}
+
+.photo-viewer-inner .icon-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0,0,0,0.5);
+}

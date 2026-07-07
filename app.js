@@ -1,7 +1,81 @@
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
+const PHOTO_DB_NAME = 'bp_photos_db';
+const PHOTO_STORE = 'photos';
 
-/** @typedef {{id:string,date:string,time:string,systolic:number,diastolic:number,pulse:number|null,tag:string,note:string}} Reading */
+/** @typedef {{id:string,date:string,time:string,systolic:number,diastolic:number,pulse:number|null,tag:string,note:string,photoId:string|null}} Reading */
+
+function openPhotoDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(PHOTO_DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(PHOTO_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function savePhoto(id, blob) {
+  const db = await openPhotoDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PHOTO_STORE, 'readwrite');
+    tx.objectStore(PHOTO_STORE).put(blob, id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function getPhoto(id) {
+  const db = await openPhotoDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PHOTO_STORE, 'readonly');
+    const req = tx.objectStore(PHOTO_STORE).get(id);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function deletePhoto(id) {
+  const db = await openPhotoDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PHOTO_STORE, 'readwrite');
+    tx.objectStore(PHOTO_STORE).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function deletePhotos(ids) {
+  return Promise.all(ids.filter(Boolean).map((id) => deletePhoto(id).catch(() => {})));
+}
+
+function resizePhoto(file, maxDim = 1000, quality = 0.75) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        if (width >= height) {
+          height = Math.round(height * (maxDim / width));
+          width = maxDim;
+        } else {
+          width = Math.round(width * (maxDim / height));
+          height = maxDim;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      canvas.toBlob((blob) => {
+        URL.revokeObjectURL(url);
+        blob ? resolve(blob) : reject(new Error('resize failed'));
+      }, 'image/jpeg', quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
+    img.src = url;
+  });
+}
 
 function loadReadings() {
   try {
@@ -92,6 +166,9 @@ let pendingSendConfirmation = false;
 let chartDateFilter = { start: '', end: '' };
 let historyDateFilter = { start: '', end: '' };
 let historyCollapsed = localStorage.getItem('bp_history_collapsed') === '1';
+let pendingPhotoBlob = null;
+let pendingPhotoRemoved = false;
+let currentPhotoId = null;
 
 function filterByRange(list, range) {
   if (!range.start && !range.end) return list;
@@ -114,12 +191,31 @@ function resetForm() {
   editIdInput.value = '';
   submitBtn.textContent = '新增紀錄';
   cancelEditBtn.hidden = true;
+  pendingPhotoBlob = null;
+  pendingPhotoRemoved = false;
+  currentPhotoId = null;
+  hidePhotoPreview();
   const now = new Date();
   document.getElementById('fieldDate').value = now.toISOString().slice(0, 10);
   document.getElementById('fieldTime').value = now.toTimeString().slice(0, 5);
 }
 
-function startEdit(id) {
+function showPhotoPreview(blob) {
+  const url = URL.createObjectURL(blob);
+  const img = document.getElementById('photoPreview');
+  if (img.src) URL.revokeObjectURL(img.src);
+  img.src = url;
+  document.getElementById('photoPreviewWrap').hidden = false;
+}
+
+function hidePhotoPreview() {
+  const img = document.getElementById('photoPreview');
+  if (img.src) URL.revokeObjectURL(img.src);
+  img.src = '';
+  document.getElementById('photoPreviewWrap').hidden = true;
+}
+
+async function startEdit(id) {
   const r = readings.find(x => x.id === id);
   if (!r) return;
   editIdInput.value = r.id;
@@ -132,22 +228,47 @@ function startEdit(id) {
   document.getElementById('fieldNote').value = r.note || '';
   submitBtn.textContent = '儲存變更';
   cancelEditBtn.hidden = false;
+  pendingPhotoBlob = null;
+  pendingPhotoRemoved = false;
+  currentPhotoId = r.photoId || null;
+  if (r.photoId) {
+    const blob = await getPhoto(r.photoId);
+    if (blob) showPhotoPreview(blob); else hidePhotoPreview();
+  } else {
+    hidePhotoPreview();
+  }
   window.scrollTo({ top: form.offsetTop - 20, behavior: 'smooth' });
 }
 
 function deleteReading(id) {
   if (!confirm('確定要刪除這筆紀錄嗎？')) return;
+  const target = readings.find(x => x.id === id);
   readings = readings.filter(x => x.id !== id);
   saveReadings(readings);
   renderAll();
   showToast('已刪除');
+  if (target && target.photoId) deletePhoto(target.photoId).catch(() => {});
 }
 
-form.addEventListener('submit', (e) => {
+form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const systolic = Number(document.getElementById('fieldSystolic').value);
   const diastolic = Number(document.getElementById('fieldDiastolic').value);
   const pulseRaw = document.getElementById('fieldPulse').value;
+
+  let photoId = currentPhotoId;
+  if (pendingPhotoRemoved && currentPhotoId) {
+    await deletePhoto(currentPhotoId);
+    photoId = null;
+  }
+  if (pendingPhotoBlob) {
+    if (currentPhotoId && !pendingPhotoRemoved) {
+      await deletePhoto(currentPhotoId);
+    }
+    photoId = crypto.randomUUID();
+    await savePhoto(photoId, pendingPhotoBlob);
+  }
+
   const entry = {
     id: editIdInput.value || crypto.randomUUID(),
     date: document.getElementById('fieldDate').value,
@@ -157,6 +278,7 @@ form.addEventListener('submit', (e) => {
     pulse: pulseRaw ? Number(pulseRaw) : null,
     tag: document.getElementById('fieldTag').value,
     note: document.getElementById('fieldNote').value.trim(),
+    photoId,
   };
 
   if (editIdInput.value) {
@@ -172,6 +294,30 @@ form.addEventListener('submit', (e) => {
 });
 
 cancelEditBtn.addEventListener('click', resetForm);
+
+document.getElementById('photoCaptureBtn').addEventListener('click', () => {
+  document.getElementById('fieldPhotoInput').click();
+});
+
+document.getElementById('fieldPhotoInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const blob = await resizePhoto(file);
+    pendingPhotoBlob = blob;
+    pendingPhotoRemoved = false;
+    showPhotoPreview(blob);
+  } catch {
+    showToast('照片處理失敗');
+  }
+});
+
+document.getElementById('removePhotoBtn').addEventListener('click', () => {
+  pendingPhotoBlob = null;
+  pendingPhotoRemoved = true;
+  hidePhotoPreview();
+});
 
 function exportCsv(list) {
   if (list.length === 0) {
@@ -272,11 +418,13 @@ document.getElementById('clearAllBtn').addEventListener('click', () => {
     return;
   }
   if (!confirm(`確定要刪除全部 ${readings.length} 筆血壓紀錄嗎？此動作無法復原。`)) return;
+  const photoIds = readings.map(r => r.photoId).filter(Boolean);
   readings = [];
   saveReadings(readings);
   resetForm();
   renderAll();
   showToast('已清除所有紀錄');
+  deletePhotos(photoIds);
 });
 
 document.getElementById('shareBtn').addEventListener('click', async () => {
@@ -383,8 +531,10 @@ document.addEventListener('visibilitychange', () => {
     settings.lastSentAt = new Date().toISOString();
     saveSettings(settings);
     if (settings.autoClear) {
+      const photoIds = readings.map(r => r.photoId).filter(Boolean);
       readings = [];
       saveReadings(readings);
+      deletePhotos(photoIds);
       showToast('已寄送並清除舊紀錄');
     } else {
       showToast('已記錄寄送時間');
@@ -428,6 +578,36 @@ historyList.addEventListener('click', (e) => {
   const id = btn.closest('.history-item').dataset.id;
   if (btn.dataset.action === 'edit') startEdit(id);
   if (btn.dataset.action === 'delete') deleteReading(id);
+  if (btn.dataset.action === 'view-photo') viewPhoto(id);
+});
+
+async function viewPhoto(id) {
+  const r = readings.find(x => x.id === id);
+  if (!r || !r.photoId) return;
+  const blob = await getPhoto(r.photoId);
+  if (!blob) {
+    showToast('找不到照片');
+    return;
+  }
+  const url = URL.createObjectURL(blob);
+  const viewer = document.getElementById('photoViewer');
+  document.getElementById('photoViewerImg').src = url;
+  viewer.dataset.objectUrl = url;
+  viewer.hidden = false;
+}
+
+function closePhotoViewer() {
+  const viewer = document.getElementById('photoViewer');
+  if (viewer.dataset.objectUrl) {
+    URL.revokeObjectURL(viewer.dataset.objectUrl);
+    delete viewer.dataset.objectUrl;
+  }
+  viewer.hidden = true;
+}
+
+document.getElementById('closePhotoViewerBtn').addEventListener('click', closePhotoViewer);
+document.getElementById('photoViewer').addEventListener('click', (e) => {
+  if (e.target.id === 'photoViewer') closePhotoViewer();
 });
 
 function renderSummary() {
@@ -476,6 +656,7 @@ function renderHistory() {
           ${r.note ? `<span class="history-note">${escapeHtml(r.note)}</span>` : ''}
         </div>
         <div class="history-actions">
+          ${r.photoId ? `<button data-action="view-photo" class="view-photo-btn" aria-label="檢視照片" title="檢視照片">🖼</button>` : ''}
           <button data-action="edit" aria-label="編輯" title="編輯">✎</button>
           <button data-action="delete" aria-label="刪除" title="刪除">🗑</button>
         </div>

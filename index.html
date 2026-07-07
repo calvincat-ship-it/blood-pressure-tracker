@@ -124,6 +124,14 @@
       <label class="full">備註
         <input type="text" id="fieldNote" maxlength="60" placeholder="選填">
       </label>
+      <div class="photo-row">
+        <button type="button" id="photoCaptureBtn" class="secondary-btn">📷 拍攝照片</button>
+        <input type="file" accept="image/*" capture="environment" id="fieldPhotoInput" hidden>
+        <div id="photoPreviewWrap" class="photo-preview-wrap" hidden>
+          <img id="photoPreview" alt="照片預覽">
+          <button type="button" id="removePhotoBtn" class="text-danger-btn">移除照片</button>
+        </div>
+      </div>
       <div class="form-actions">
         <button type="submit" class="primary-btn" id="submitBtn">新增紀錄</button>
         <button type="button" class="secondary-btn" id="cancelEditBtn" hidden>取消編輯</button>
@@ -185,6 +193,13 @@
         <button type="button" id="sendNowBtn" class="secondary-btn">立即寄送一次</button>
       </div>
     </form>
+  </div>
+</div>
+
+<div id="photoViewer" class="modal-backdrop photo-viewer" hidden>
+  <div class="photo-viewer-inner">
+    <button type="button" id="closePhotoViewerBtn" class="icon-btn" aria-label="關閉">✕</button>
+    <img id="photoViewerImg" alt="血壓照片">
   </div>
 </div>
 
