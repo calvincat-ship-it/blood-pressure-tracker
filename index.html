@@ -170,6 +170,7 @@
       <button type="button" id="closeSettingsBtn" class="icon-btn" aria-label="關閉">✕</button>
     </div>
     <form id="settingsForm">
+      <h3 class="settings-section-title">定期寄送 Email</h3>
       <label class="full">收件 Email
         <input type="email" id="settingEmail" placeholder="you@example.com">
       </label>
@@ -189,8 +190,31 @@
       </label>
       <p class="settings-meta" id="lastSentInfo"></p>
       <div class="form-actions">
-        <button type="submit" class="primary-btn">儲存設定</button>
         <button type="button" id="sendNowBtn" class="secondary-btn">立即寄送一次</button>
+      </div>
+
+      <hr class="settings-divider">
+
+      <h3 class="settings-section-title">量測提醒通知</h3>
+      <label class="checkbox-row">
+        <input type="checkbox" id="settingReminderEnabled">
+        啟用量測提醒通知（每天最多 3 次）
+      </label>
+      <div class="form-row three">
+        <label>提醒時間 1
+          <input type="time" id="reminderTime1">
+        </label>
+        <label>提醒時間 2
+          <input type="time" id="reminderTime2">
+        </label>
+        <label>提醒時間 3
+          <input type="time" id="reminderTime3">
+        </label>
+      </div>
+      <p class="settings-meta">需要允許通知權限，且此頁面保持開啟（可切到背景分頁）才能準時提醒；App 完全關閉時無法收到通知。</p>
+
+      <div class="form-actions">
+        <button type="submit" class="primary-btn">儲存設定</button>
       </div>
     </form>
   </div>

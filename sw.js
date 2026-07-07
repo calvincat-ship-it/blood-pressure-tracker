@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bp-tracker-v3';
+const CACHE_NAME = 'bp-tracker-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -37,5 +37,17 @@ self.addEventListener('fetch', (event) => {
         return response;
       })
       .catch(() => caches.match(event.request))
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window' }).then((clients) => {
+      for (const client of clients) {
+        if ('focus' in client) return client.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow('./');
+    })
   );
 });

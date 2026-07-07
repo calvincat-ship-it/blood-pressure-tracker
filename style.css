@@ -478,6 +478,18 @@ input:focus, select:focus {
   margin: 0;
 }
 
+.settings-section-title {
+  font-size: 14px;
+  color: var(--primary-dark);
+  margin: 0;
+}
+
+.settings-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
+}
+
 .photo-row {
   display: flex;
   flex-direction: column;

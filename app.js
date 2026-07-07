@@ -90,7 +90,10 @@ function saveReadings(readings) {
 }
 
 function loadSettings() {
-  const defaults = { email: '', frequency: 'weekly', customDays: 14, autoClear: false, lastSentAt: null };
+  const defaults = {
+    email: '', frequency: 'weekly', customDays: 14, autoClear: false, lastSentAt: null,
+    reminderEnabled: false, reminderTimes: ['08:00', '13:00', '20:00'],
+  };
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY)) };
   } catch {
@@ -461,6 +464,11 @@ function openSettings() {
   document.getElementById('settingFrequency').value = settings.frequency;
   document.getElementById('settingCustomDays').value = settings.customDays;
   document.getElementById('settingAutoClear').checked = settings.autoClear;
+  document.getElementById('settingReminderEnabled').checked = settings.reminderEnabled;
+  const times = settings.reminderTimes || [];
+  document.getElementById('reminderTime1').value = times[0] || '';
+  document.getElementById('reminderTime2').value = times[1] || '';
+  document.getElementById('reminderTime3').value = times[2] || '';
   toggleCustomDaysRow();
   renderSettingsMeta();
   settingsModal.hidden = false;
@@ -485,12 +493,33 @@ document.getElementById('closeSettingsBtn').addEventListener('click', closeSetti
 settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) closeSettings(); });
 document.getElementById('settingFrequency').addEventListener('change', toggleCustomDaysRow);
 
-document.getElementById('settingsForm').addEventListener('submit', (e) => {
+document.getElementById('settingsForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   settings.email = document.getElementById('settingEmail').value.trim();
   settings.frequency = document.getElementById('settingFrequency').value;
   settings.customDays = Number(document.getElementById('settingCustomDays').value) || 14;
   settings.autoClear = document.getElementById('settingAutoClear').checked;
+
+  const reminderEnabled = document.getElementById('settingReminderEnabled').checked;
+  settings.reminderTimes = [
+    document.getElementById('reminderTime1').value,
+    document.getElementById('reminderTime2').value,
+    document.getElementById('reminderTime3').value,
+  ].filter(Boolean);
+
+  if (reminderEnabled && settings.reminderTimes.length === 0) {
+    showToast('請至少設定一個提醒時間');
+    return;
+  }
+
+  if (reminderEnabled && 'Notification' in window && Notification.permission === 'default') {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      showToast('未取得通知權限，提醒將以應用內提示顯示');
+    }
+  }
+  settings.reminderEnabled = reminderEnabled;
+
   saveSettings(settings);
   closeSettings();
   renderReminder();
@@ -760,6 +789,58 @@ function renderAll() {
 }
 
 window.addEventListener('resize', () => renderChart());
+
+// ---- Measurement reminder notifications ----
+
+const FIRED_SLOTS_KEY = 'bp_reminder_fired';
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function loadFiredSlots() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(FIRED_SLOTS_KEY));
+    if (raw && raw.date === todayStr()) return raw;
+  } catch {}
+  return { date: todayStr(), times: [] };
+}
+
+function saveFiredSlots(state) {
+  localStorage.setItem(FIRED_SLOTS_KEY, JSON.stringify(state));
+}
+
+async function fireMeasurementReminder(t) {
+  const body = `建議現在（${t}）量測血壓`;
+  if ('Notification' in window && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification('量血壓提醒', { body, icon: 'icons/icon-192.png', tag: `bp-reminder-${t}` });
+      return;
+    } catch {}
+  }
+  showToast(`⏰ ${body}`);
+}
+
+function checkMeasurementReminders() {
+  if (!settings.reminderEnabled) return;
+  const times = (settings.reminderTimes || []).filter(Boolean);
+  if (times.length === 0) return;
+  const hhmm = new Date().toTimeString().slice(0, 5);
+  const fired = loadFiredSlots();
+  let changed = false;
+  times.forEach((t) => {
+    if (t === hhmm && !fired.times.includes(t)) {
+      fireMeasurementReminder(t);
+      fired.times.push(t);
+      changed = true;
+    }
+  });
+  if (changed) saveFiredSlots(fired);
+}
+
+setInterval(checkMeasurementReminders, 20000);
+checkMeasurementReminders();
 
 resetForm();
 applyHistoryCollapsed();
