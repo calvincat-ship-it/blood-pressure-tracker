@@ -60,6 +60,59 @@ body {
   cursor: pointer;
 }
 
+.export-menu-wrapper {
+  position: relative;
+}
+
+.export-menu {
+  position: absolute;
+  top: 46px;
+  right: 0;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  padding: 6px;
+  width: 180px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+}
+
+.export-menu-item {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 10px 10px;
+  font-size: 14px;
+  color: var(--text);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.export-menu-item:active {
+  background: var(--bg);
+}
+
+.export-custom-range {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 4px;
+}
+
+.export-custom-range label {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  color: var(--text-muted);
+  gap: 4px;
+}
+
+.export-custom-range .primary-btn {
+  padding: 8px;
+  font-size: 13px;
+}
+
 main {
   max-width: 480px;
   margin: 0 auto;

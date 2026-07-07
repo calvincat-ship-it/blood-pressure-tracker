@@ -18,7 +18,23 @@
   <h1>血壓記錄</h1>
   <div class="header-actions">
     <button id="shareBtn" class="icon-btn" title="分享紀錄" aria-label="分享紀錄">📤</button>
-    <button id="exportBtn" class="icon-btn" title="匯出 CSV" aria-label="匯出 CSV">⬇</button>
+    <div class="export-menu-wrapper">
+      <button id="exportBtn" class="icon-btn" title="匯出 CSV" aria-label="匯出 CSV">⬇</button>
+      <div id="exportMenu" class="export-menu" hidden>
+        <button type="button" class="export-menu-item" data-range="all">全部</button>
+        <button type="button" class="export-menu-item" data-range="30">最近 30 天</button>
+        <button type="button" class="export-menu-item" data-range="custom">設定日期</button>
+        <div id="exportCustomRange" class="export-custom-range" hidden>
+          <label>起始日期
+            <input type="date" id="exportStart">
+          </label>
+          <label>結束日期
+            <input type="date" id="exportEnd">
+          </label>
+          <button type="button" id="exportConfirmBtn" class="primary-btn">匯出 CSV</button>
+        </div>
+      </div>
+    </div>
     <button id="settingsBtn" class="icon-btn" title="設定" aria-label="設定">⚙</button>
   </div>
 </header>
@@ -47,28 +63,20 @@
 
   <section class="card">
     <div class="chart-header">
-      <h2>日期範圍</h2>
-      <button type="button" id="clearDateFilterBtn" class="text-danger-btn">清除篩選</button>
-    </div>
-    <div class="form-row">
-      <label>起始日期
-        <input type="date" id="filterStart">
-      </label>
-      <label>結束日期
-        <input type="date" id="filterEnd">
-      </label>
-    </div>
-    <p class="settings-meta">套用於下方趨勢圖、歷史紀錄與匯出 CSV</p>
-  </section>
-
-  <section class="card">
-    <div class="chart-header">
       <h2>趨勢圖</h2>
       <select id="chartRange">
         <option value="14">近 14 筆</option>
         <option value="30" selected>近 30 筆</option>
         <option value="9999">全部</option>
       </select>
+    </div>
+    <div class="form-row">
+      <label>起始日期
+        <input type="date" id="chartFilterStart">
+      </label>
+      <label>結束日期
+        <input type="date" id="chartFilterEnd">
+      </label>
     </div>
     <canvas id="trendChart" height="180"></canvas>
     <div class="legend">
@@ -131,6 +139,14 @@
       <button type="button" id="clearAllBtn" class="text-danger-btn">清除全部</button>
     </div>
     <div id="historyBody">
+      <div class="form-row">
+        <label>起始日期
+          <input type="date" id="historyFilterStart">
+        </label>
+        <label>結束日期
+          <input type="date" id="historyFilterEnd">
+        </label>
+      </div>
       <div id="historyList" class="history-list"></div>
       <p id="emptyState" class="empty-state" hidden>尚無紀錄，開始新增第一筆血壓記錄吧！</p>
     </div>

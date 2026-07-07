@@ -89,14 +89,15 @@ let readings = loadReadings();
 let settings = loadSettings();
 let reminderDismissedThisSession = false;
 let pendingSendConfirmation = false;
-let dateFilter = { start: '', end: '' };
+let chartDateFilter = { start: '', end: '' };
+let historyDateFilter = { start: '', end: '' };
 let historyCollapsed = localStorage.getItem('bp_history_collapsed') === '1';
 
-function filteredReadings() {
-  if (!dateFilter.start && !dateFilter.end) return readings;
-  return readings.filter(r => {
-    if (dateFilter.start && r.date < dateFilter.start) return false;
-    if (dateFilter.end && r.date > dateFilter.end) return false;
+function filterByRange(list, range) {
+  if (!range.start && !range.end) return list;
+  return list.filter(r => {
+    if (range.start && r.date < range.start) return false;
+    if (range.end && r.date > range.end) return false;
     return true;
   });
 }
@@ -172,8 +173,7 @@ form.addEventListener('submit', (e) => {
 
 cancelEditBtn.addEventListener('click', resetForm);
 
-document.getElementById('exportBtn').addEventListener('click', () => {
-  const list = filteredReadings();
+function exportCsv(list) {
   if (list.length === 0) {
     showToast('此區間沒有資料可匯出');
     return;
@@ -185,23 +185,73 @@ document.getElementById('exportBtn').addEventListener('click', () => {
   a.download = `血壓紀錄_${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+const exportMenu = document.getElementById('exportMenu');
+const exportCustomRange = document.getElementById('exportCustomRange');
+
+function closeExportMenu() {
+  exportMenu.hidden = true;
+  exportCustomRange.hidden = true;
+}
+
+document.getElementById('exportBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  exportMenu.hidden = !exportMenu.hidden;
+  if (exportMenu.hidden) exportCustomRange.hidden = true;
 });
 
-document.getElementById('filterStart').addEventListener('change', (e) => {
-  dateFilter.start = e.target.value;
-  renderAll();
+document.addEventListener('click', (e) => {
+  if (!exportMenu.hidden && !exportMenu.contains(e.target) && e.target.id !== 'exportBtn') {
+    closeExportMenu();
+  }
 });
 
-document.getElementById('filterEnd').addEventListener('change', (e) => {
-  dateFilter.end = e.target.value;
-  renderAll();
+exportMenu.querySelectorAll('.export-menu-item').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const rangeType = btn.dataset.range;
+    if (rangeType === 'custom') {
+      exportCustomRange.hidden = false;
+      return;
+    }
+    if (rangeType === 'all') {
+      exportCsv(readings);
+    } else if (rangeType === '30') {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(start.getDate() - 29);
+      const toStr = (d) => d.toISOString().slice(0, 10);
+      exportCsv(filterByRange(readings, { start: toStr(start), end: toStr(end) }));
+    }
+    closeExportMenu();
+  });
 });
 
-document.getElementById('clearDateFilterBtn').addEventListener('click', () => {
-  dateFilter = { start: '', end: '' };
-  document.getElementById('filterStart').value = '';
-  document.getElementById('filterEnd').value = '';
-  renderAll();
+document.getElementById('exportConfirmBtn').addEventListener('click', () => {
+  const start = document.getElementById('exportStart').value;
+  const end = document.getElementById('exportEnd').value;
+  exportCsv(filterByRange(readings, { start, end }));
+  closeExportMenu();
+});
+
+document.getElementById('chartFilterStart').addEventListener('change', (e) => {
+  chartDateFilter.start = e.target.value;
+  renderChart();
+});
+
+document.getElementById('chartFilterEnd').addEventListener('change', (e) => {
+  chartDateFilter.end = e.target.value;
+  renderChart();
+});
+
+document.getElementById('historyFilterStart').addEventListener('change', (e) => {
+  historyDateFilter.start = e.target.value;
+  renderHistory();
+});
+
+document.getElementById('historyFilterEnd').addEventListener('change', (e) => {
+  historyDateFilter.end = e.target.value;
+  renderHistory();
 });
 
 function applyHistoryCollapsed() {
@@ -410,9 +460,9 @@ function renderSummary() {
 }
 
 function renderHistory() {
-  const sorted = [...sortByDateTime(filteredReadings())].reverse();
+  const sorted = [...sortByDateTime(filterByRange(readings, historyDateFilter))].reverse();
   emptyState.hidden = sorted.length > 0;
-  emptyState.textContent = (dateFilter.start || dateFilter.end)
+  emptyState.textContent = (historyDateFilter.start || historyDateFilter.end)
     ? '此區間沒有紀錄'
     : '尚無紀錄，開始新增第一筆血壓記錄吧！';
   historyList.innerHTML = sorted.map(r => {
@@ -452,7 +502,7 @@ function renderChart() {
   ctx.clearRect(0, 0, cssWidth, cssHeight);
 
   const range = Number(chartRangeSelect.value);
-  const data = sortByDateTime(filteredReadings()).slice(-range);
+  const data = sortByDateTime(filterByRange(readings, chartDateFilter)).slice(-range);
 
   if (data.length === 0) {
     ctx.fillStyle = '#9aa8b0';
