@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2f6690">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>血壓記錄</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="app-header">
+  <h1>血壓記錄</h1>
+  <button id="exportBtn" class="icon-btn" title="匯出 CSV" aria-label="匯出 CSV">⬇</button>
+</header>
+
+<main>
+  <section class="card summary-card" id="summaryCard">
+    <div class="summary-item">
+      <span class="summary-label">最近一次</span>
+      <span class="summary-value" id="latestValue">—</span>
+      <span class="summary-tag" id="latestTag"></span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">近 7 天平均</span>
+      <span class="summary-value" id="avgValue">—</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="chart-header">
+      <h2>趨勢圖</h2>
+      <select id="chartRange">
+        <option value="14">近 14 筆</option>
+        <option value="30" selected>近 30 筆</option>
+        <option value="9999">全部</option>
+      </select>
+    </div>
+    <canvas id="trendChart" height="180"></canvas>
+    <div class="legend">
+      <span><i class="dot systolic"></i>收縮壓</span>
+      <span><i class="dot diastolic"></i>舒張壓</span>
+      <span><i class="dot pulse"></i>心跳</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>新增紀錄</h2>
+    <form id="entryForm">
+      <input type="hidden" id="editId">
+      <div class="form-row">
+        <label>日期
+          <input type="date" id="fieldDate" required>
+        </label>
+        <label>時間
+          <input type="time" id="fieldTime" required>
+        </label>
+      </div>
+      <div class="form-row three">
+        <label>收縮壓 <span class="unit">mmHg</span>
+          <input type="number" id="fieldSystolic" inputmode="numeric" min="50" max="260" required>
+        </label>
+        <label>舒張壓 <span class="unit">mmHg</span>
+          <input type="number" id="fieldDiastolic" inputmode="numeric" min="30" max="200" required>
+        </label>
+        <label>心跳 <span class="unit">bpm</span>
+          <input type="number" id="fieldPulse" inputmode="numeric" min="30" max="220">
+        </label>
+      </div>
+      <div class="form-row">
+        <label>時段
+          <select id="fieldTag">
+            <option value="">未指定</option>
+            <option value="起床">起床</option>
+            <option value="睡前">睡前</option>
+            <option value="飯後">飯後</option>
+            <option value="運動後">運動後</option>
+            <option value="其他">其他</option>
+          </select>
+        </label>
+      </div>
+      <label class="full">備註
+        <input type="text" id="fieldNote" maxlength="60" placeholder="選填">
+      </label>
+      <div class="form-actions">
+        <button type="submit" class="primary-btn" id="submitBtn">新增紀錄</button>
+        <button type="button" class="secondary-btn" id="cancelEditBtn" hidden>取消編輯</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>歷史紀錄</h2>
+    <div id="historyList" class="history-list"></div>
+    <p id="emptyState" class="empty-state" hidden>尚無紀錄，開始新增第一筆血壓記錄吧！</p>
+  </section>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
