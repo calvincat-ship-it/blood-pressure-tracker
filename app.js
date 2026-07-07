@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'bp_records_v1';
+const SETTINGS_KEY = 'bp_settings_v1';
 
 /** @typedef {{id:string,date:string,time:string,systolic:number,diastolic:number,pulse:number|null,tag:string,note:string}} Reading */
 
@@ -12,6 +13,50 @@ function loadReadings() {
 
 function saveReadings(readings) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(readings));
+}
+
+function loadSettings() {
+  const defaults = { email: '', frequency: 'weekly', customDays: 14, autoClear: false, lastSentAt: null };
+  try {
+    return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY)) };
+  } catch {
+    return defaults;
+  }
+}
+
+function saveSettings(s) {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+}
+
+function nextDueDate(s) {
+  const d = new Date(s.lastSentAt);
+  if (s.frequency === 'weekly') d.setDate(d.getDate() + 7);
+  else if (s.frequency === 'monthly') d.setMonth(d.getMonth() + 1);
+  else d.setDate(d.getDate() + Math.max(1, Number(s.customDays) || 14));
+  return d;
+}
+
+function isReminderDue(s, readingsList) {
+  if (!s.email || readingsList.length === 0) return false;
+  if (!s.lastSentAt) return true;
+  return new Date() >= nextDueDate(s);
+}
+
+function buildCsv(list) {
+  const header = '日期,時間,收縮壓,舒張壓,心跳,時段,備註\n';
+  const rows = sortByDateTime(list).map(r =>
+    [r.date, r.time, r.systolic, r.diastolic, r.pulse ?? '', r.tag, `"${(r.note || '').replace(/"/g, '""')}"`].join(',')
+  );
+  return '﻿' + header + rows.join('\n');
+}
+
+function buildEmailBody(list) {
+  const sorted = sortByDateTime(list);
+  const lines = sorted.map(r => {
+    const c = classify(r.systolic, r.diastolic);
+    return `${r.date} ${r.time}  ${r.systolic}/${r.diastolic} mmHg${r.pulse ? `  心跳 ${r.pulse}` : ''}  [${c.label}]${r.tag ? `  ${r.tag}` : ''}${r.note ? `  備註:${r.note}` : ''}`;
+  });
+  return `血壓紀錄（共 ${sorted.length} 筆）\n\n${lines.join('\n')}`;
 }
 
 function classify(systolic, diastolic) {
@@ -41,6 +86,9 @@ const toast = document.getElementById('toast');
 const chartRangeSelect = document.getElementById('chartRange');
 
 let readings = loadReadings();
+let settings = loadSettings();
+let reminderDismissedThisSession = false;
+let pendingSendConfirmation = false;
 
 function showToast(msg) {
   toast.textContent = msg;
@@ -118,12 +166,7 @@ document.getElementById('exportBtn').addEventListener('click', () => {
     showToast('目前沒有資料可匯出');
     return;
   }
-  const header = '日期,時間,收縮壓,舒張壓,心跳,時段,備註\n';
-  const rows = sortByDateTime(readings).map(r =>
-    [r.date, r.time, r.systolic, r.diastolic, r.pulse ?? '', r.tag, `"${(r.note || '').replace(/"/g, '""')}"`].join(',')
-  );
-  const csv = '﻿' + header + rows.join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const blob = new Blob([buildCsv(readings)], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -144,6 +187,147 @@ document.getElementById('clearAllBtn').addEventListener('click', () => {
   renderAll();
   showToast('已清除所有紀錄');
 });
+
+document.getElementById('shareBtn').addEventListener('click', async () => {
+  if (readings.length === 0) {
+    showToast('目前沒有資料可分享');
+    return;
+  }
+  const shareData = { title: '血壓記錄', text: buildEmailBody(readings) };
+  try {
+    const file = new File([buildCsv(readings)], `血壓紀錄_${new Date().toISOString().slice(0, 10)}.csv`, { type: 'text/csv' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      shareData.files = [file];
+    }
+  } catch {}
+
+  if (navigator.share) {
+    try {
+      await navigator.share(shareData);
+    } catch (err) {
+      if (err.name !== 'AbortError') showToast('分享失敗');
+    }
+  } else {
+    showToast('此瀏覽器不支援分享，改為下載 CSV');
+    document.getElementById('exportBtn').click();
+  }
+});
+
+// ---- Settings & scheduled email reminder ----
+
+const settingsModal = document.getElementById('settingsModal');
+
+function openSettings() {
+  document.getElementById('settingEmail').value = settings.email;
+  document.getElementById('settingFrequency').value = settings.frequency;
+  document.getElementById('settingCustomDays').value = settings.customDays;
+  document.getElementById('settingAutoClear').checked = settings.autoClear;
+  toggleCustomDaysRow();
+  renderSettingsMeta();
+  settingsModal.hidden = false;
+}
+
+function closeSettings() {
+  settingsModal.hidden = true;
+}
+
+function toggleCustomDaysRow() {
+  document.getElementById('customDaysRow').hidden = document.getElementById('settingFrequency').value !== 'custom';
+}
+
+function renderSettingsMeta() {
+  document.getElementById('lastSentInfo').textContent = settings.lastSentAt
+    ? `上次寄送：${new Date(settings.lastSentAt).toLocaleString('zh-TW')}`
+    : '尚未寄送過';
+}
+
+document.getElementById('settingsBtn').addEventListener('click', openSettings);
+document.getElementById('closeSettingsBtn').addEventListener('click', closeSettings);
+settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) closeSettings(); });
+document.getElementById('settingFrequency').addEventListener('change', toggleCustomDaysRow);
+
+document.getElementById('settingsForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  settings.email = document.getElementById('settingEmail').value.trim();
+  settings.frequency = document.getElementById('settingFrequency').value;
+  settings.customDays = Number(document.getElementById('settingCustomDays').value) || 14;
+  settings.autoClear = document.getElementById('settingAutoClear').checked;
+  saveSettings(settings);
+  closeSettings();
+  renderReminder();
+  showToast('設定已儲存');
+});
+
+document.getElementById('sendNowBtn').addEventListener('click', () => {
+  closeSettings();
+  sendReminderEmail();
+});
+
+function sendReminderEmail() {
+  if (!settings.email) {
+    showToast('請先在設定中輸入 Email');
+    openSettings();
+    return;
+  }
+  if (readings.length === 0) {
+    showToast('目前沒有紀錄可寄送');
+    return;
+  }
+  const sorted = sortByDateTime(readings);
+  const subject = `血壓紀錄 ${fmtDate(sorted[0].date)} - ${fmtDate(sorted[sorted.length - 1].date)}`;
+  const body = buildEmailBody(readings);
+  const mailto = `mailto:${encodeURIComponent(settings.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  pendingSendConfirmation = true;
+  window.location.href = mailto;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !pendingSendConfirmation) return;
+  pendingSendConfirmation = false;
+  setTimeout(() => {
+    if (!confirm('請問郵件是否已經寄出？')) {
+      renderReminder();
+      return;
+    }
+    settings.lastSentAt = new Date().toISOString();
+    saveSettings(settings);
+    if (settings.autoClear) {
+      readings = [];
+      saveReadings(readings);
+      showToast('已寄送並清除舊紀錄');
+    } else {
+      showToast('已記錄寄送時間');
+    }
+    renderAll();
+    renderSettingsMeta();
+  }, 300);
+});
+
+document.getElementById('reminderSendBtn').addEventListener('click', sendReminderEmail);
+
+document.getElementById('reminderLaterBtn').addEventListener('click', () => {
+  reminderDismissedThisSession = true;
+  renderReminder();
+});
+
+document.getElementById('reminderSkipBtn').addEventListener('click', () => {
+  settings.lastSentAt = new Date().toISOString();
+  saveSettings(settings);
+  renderReminder();
+  showToast('已略過本次提醒');
+});
+
+function renderReminder() {
+  const card = document.getElementById('reminderCard');
+  if (reminderDismissedThisSession || !isReminderDue(settings, readings)) {
+    card.hidden = true;
+    return;
+  }
+  document.getElementById('reminderText').textContent = settings.lastSentAt
+    ? `距離上次寄送已經到了設定的週期，該把血壓紀錄寄給 ${settings.email} 了。`
+    : `已設定定期寄送到 ${settings.email}，要現在寄送第一次嗎？`;
+  card.hidden = false;
+}
 
 chartRangeSelect.addEventListener('change', renderChart);
 
@@ -297,6 +481,7 @@ function renderAll() {
   renderSummary();
   renderHistory();
   renderChart();
+  renderReminder();
 }
 
 window.addEventListener('resize', () => renderChart());

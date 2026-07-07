@@ -16,10 +16,23 @@
 <body>
 <header class="app-header">
   <h1>血壓記錄</h1>
-  <button id="exportBtn" class="icon-btn" title="匯出 CSV" aria-label="匯出 CSV">⬇</button>
+  <div class="header-actions">
+    <button id="shareBtn" class="icon-btn" title="分享紀錄" aria-label="分享紀錄">📤</button>
+    <button id="exportBtn" class="icon-btn" title="匯出 CSV" aria-label="匯出 CSV">⬇</button>
+    <button id="settingsBtn" class="icon-btn" title="設定" aria-label="設定">⚙</button>
+  </div>
 </header>
 
 <main>
+  <section class="card reminder-card" id="reminderCard" hidden>
+    <p id="reminderText"></p>
+    <div class="reminder-actions">
+      <button type="button" id="reminderSendBtn" class="primary-btn">立即寄送</button>
+      <button type="button" id="reminderLaterBtn" class="secondary-btn">稍後提醒</button>
+      <button type="button" id="reminderSkipBtn" class="text-danger-btn">略過本次</button>
+    </div>
+  </section>
+
   <section class="card summary-card" id="summaryCard">
     <div class="summary-item">
       <span class="summary-label">最近一次</span>
@@ -105,6 +118,39 @@
 </main>
 
 <div id="toast" class="toast" hidden></div>
+
+<div id="settingsModal" class="modal-backdrop" hidden>
+  <div class="modal-sheet">
+    <div class="modal-header">
+      <h2>設定</h2>
+      <button type="button" id="closeSettingsBtn" class="icon-btn" aria-label="關閉">✕</button>
+    </div>
+    <form id="settingsForm">
+      <label class="full">收件 Email
+        <input type="email" id="settingEmail" placeholder="you@example.com">
+      </label>
+      <label class="full">寄送頻率
+        <select id="settingFrequency">
+          <option value="weekly">每週</option>
+          <option value="monthly">每月</option>
+          <option value="custom">固定天數</option>
+        </select>
+      </label>
+      <label class="full" id="customDaysRow" hidden>間隔天數
+        <input type="number" id="settingCustomDays" min="1" max="365" value="14">
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" id="settingAutoClear">
+        傳送完成後自動清除舊紀錄
+      </label>
+      <p class="settings-meta" id="lastSentInfo"></p>
+      <div class="form-actions">
+        <button type="submit" class="primary-btn">儲存設定</button>
+        <button type="button" id="sendNowBtn" class="secondary-btn">立即寄送一次</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <script src="app.js"></script>
 </body>

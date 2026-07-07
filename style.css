@@ -42,6 +42,11 @@ body {
   margin: 0;
 }
 
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .icon-btn {
   background: rgba(255,255,255,0.15);
   border: none;
@@ -307,4 +312,99 @@ input:focus, select:focus {
   font-size: 13px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.2);
   z-index: 20;
+}
+
+.reminder-card {
+  border: 1px solid var(--elevated);
+  background: #fff9ec;
+}
+
+.reminder-card p {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.reminder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reminder-actions .primary-btn,
+.reminder-actions .secondary-btn {
+  flex: none;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+.reminder-actions .text-danger-btn {
+  margin-left: auto;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 30;
+}
+
+.modal-backdrop[hidden] {
+  display: none;
+}
+
+.modal-sheet {
+  background: #fff;
+  width: 100%;
+  max-width: 480px;
+  border-radius: 16px 16px 0 0;
+  padding: 16px;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.modal-header h2 {
+  margin: 0;
+  color: var(--primary-dark);
+}
+
+.modal-header .icon-btn {
+  background: #eef1f3;
+  color: var(--text);
+  width: 32px;
+  height: 32px;
+  font-size: 15px;
+}
+
+#settingsForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.checkbox-row input {
+  width: auto;
+}
+
+.settings-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
 }
