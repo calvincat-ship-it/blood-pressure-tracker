@@ -93,6 +93,7 @@ function loadSettings() {
   const defaults = {
     email: '', frequency: 'weekly', customDays: 14, autoClear: false, lastSentAt: null,
     reminderEnabled: false, reminderTimes: ['08:00', '13:00', '20:00'],
+    highBpAlertEnabled: false, highBpAlertMode: 'auto', highBpCustomSystolic: 130, highBpCustomDiastolic: 80,
   };
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY)) };
@@ -142,6 +143,16 @@ function classify(systolic, diastolic) {
   if (systolic >= 130 || diastolic >= 80) return { label: '第一期高血壓', cls: 'stage1' };
   if (systolic >= 120) return { label: '偏高', cls: 'elevated' };
   return { label: '正常', cls: 'normal' };
+}
+
+function meetsHighBpThreshold(r, s) {
+  if (s.highBpAlertMode === 'custom') {
+    const sysThreshold = Number(s.highBpCustomSystolic) || 130;
+    const diaThreshold = Number(s.highBpCustomDiastolic) || 80;
+    return r.systolic >= sysThreshold || r.diastolic >= diaThreshold;
+  }
+  const cls = classify(r.systolic, r.diastolic).cls;
+  return cls === 'stage1' || cls === 'stage2' || cls === 'crisis';
 }
 
 function sortByDateTime(readings) {
@@ -284,6 +295,8 @@ form.addEventListener('submit', async (e) => {
     photoId,
   };
 
+  const priorSameDayHigh = readings.some(x => x.id !== entry.id && x.date === entry.date && meetsHighBpThreshold(x, settings));
+
   if (editIdInput.value) {
     readings = readings.map(x => x.id === entry.id ? entry : x);
     showToast('已更新紀錄');
@@ -294,6 +307,10 @@ form.addEventListener('submit', async (e) => {
   saveReadings(readings);
   resetForm();
   renderAll();
+
+  if (settings.highBpAlertEnabled && !priorSameDayHigh && meetsHighBpThreshold(entry, settings)) {
+    alert('目前您的血壓有過高的情況，請記得服藥以控制血壓');
+  }
 });
 
 cancelEditBtn.addEventListener('click', resetForm);
@@ -469,7 +486,12 @@ function openSettings() {
   document.getElementById('reminderTime1').value = times[0] || '';
   document.getElementById('reminderTime2').value = times[1] || '';
   document.getElementById('reminderTime3').value = times[2] || '';
+  document.getElementById('settingHighBpAlertEnabled').checked = settings.highBpAlertEnabled;
+  document.getElementById('highBpAlertMode').value = settings.highBpAlertMode;
+  document.getElementById('highBpCustomSystolic').value = settings.highBpCustomSystolic;
+  document.getElementById('highBpCustomDiastolic').value = settings.highBpCustomDiastolic;
   toggleCustomDaysRow();
+  toggleHighBpCustomRow();
   renderSettingsMeta();
   settingsModal.hidden = false;
 }
@@ -482,6 +504,10 @@ function toggleCustomDaysRow() {
   document.getElementById('customDaysRow').hidden = document.getElementById('settingFrequency').value !== 'custom';
 }
 
+function toggleHighBpCustomRow() {
+  document.getElementById('highBpCustomRow').hidden = document.getElementById('highBpAlertMode').value !== 'custom';
+}
+
 function renderSettingsMeta() {
   document.getElementById('lastSentInfo').textContent = settings.lastSentAt
     ? `上次寄送：${new Date(settings.lastSentAt).toLocaleString('zh-TW')}`
@@ -492,6 +518,7 @@ document.getElementById('settingsBtn').addEventListener('click', openSettings);
 document.getElementById('closeSettingsBtn').addEventListener('click', closeSettings);
 settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) closeSettings(); });
 document.getElementById('settingFrequency').addEventListener('change', toggleCustomDaysRow);
+document.getElementById('highBpAlertMode').addEventListener('change', toggleHighBpCustomRow);
 
 document.getElementById('settingsForm').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -519,6 +546,11 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
     }
   }
   settings.reminderEnabled = reminderEnabled;
+
+  settings.highBpAlertEnabled = document.getElementById('settingHighBpAlertEnabled').checked;
+  settings.highBpAlertMode = document.getElementById('highBpAlertMode').value;
+  settings.highBpCustomSystolic = Number(document.getElementById('highBpCustomSystolic').value) || 130;
+  settings.highBpCustomDiastolic = Number(document.getElementById('highBpCustomDiastolic').value) || 80;
 
   saveSettings(settings);
   closeSettings();

@@ -213,6 +213,29 @@
       </div>
       <p class="settings-meta">需要允許通知權限，且此頁面保持開啟（可切到背景分頁）才能準時提醒；App 完全關閉時無法收到通知。</p>
 
+      <hr class="settings-divider">
+
+      <h3 class="settings-section-title">高血壓服藥提醒</h3>
+      <label class="checkbox-row">
+        <input type="checkbox" id="settingHighBpAlertEnabled">
+        每日第一次出現高血壓紀錄時提醒服藥
+      </label>
+      <label class="full">判定方式
+        <select id="highBpAlertMode">
+          <option value="auto">自動（採用血壓分級標準）</option>
+          <option value="custom">自行設定門檻</option>
+        </select>
+      </label>
+      <div class="form-row" id="highBpCustomRow" hidden>
+        <label>收縮壓門檻 <span class="unit">mmHg</span>
+          <input type="number" id="highBpCustomSystolic" min="80" max="260" value="130">
+        </label>
+        <label>舒張壓門檻 <span class="unit">mmHg</span>
+          <input type="number" id="highBpCustomDiastolic" min="50" max="200" value="80">
+        </label>
+      </div>
+      <p class="settings-meta">自動模式採用「第一期高血壓」以上（收縮壓 ≥130 或舒張壓 ≥80）作為判定標準。</p>
+
       <div class="form-actions">
         <button type="submit" class="primary-btn">儲存設定</button>
       </div>
