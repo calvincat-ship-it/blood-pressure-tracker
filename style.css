@@ -117,6 +117,16 @@ main {
   background: #fff;
 }
 
+.text-danger-btn {
+  background: none;
+  border: none;
+  color: var(--stage2);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 2px;
+}
+
 #trendChart {
   width: 100%;
   display: block;

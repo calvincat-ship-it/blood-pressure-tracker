@@ -132,6 +132,19 @@ document.getElementById('exportBtn').addEventListener('click', () => {
   URL.revokeObjectURL(url);
 });
 
+document.getElementById('clearAllBtn').addEventListener('click', () => {
+  if (readings.length === 0) {
+    showToast('目前沒有紀錄');
+    return;
+  }
+  if (!confirm(`確定要刪除全部 ${readings.length} 筆血壓紀錄嗎？此動作無法復原。`)) return;
+  readings = [];
+  saveReadings(readings);
+  resetForm();
+  renderAll();
+  showToast('已清除所有紀錄');
+});
+
 chartRangeSelect.addEventListener('change', renderChart);
 
 historyList.addEventListener('click', (e) => {
