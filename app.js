@@ -563,6 +563,96 @@ document.getElementById('sendNowBtn').addEventListener('click', () => {
   sendReminderEmail();
 });
 
+// ---- Backup export / restore ----
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function dataUrlToBlob(dataUrl) {
+  const res = await fetch(dataUrl);
+  return res.blob();
+}
+
+async function exportBackup() {
+  const photoIds = readings.map(r => r.photoId).filter(Boolean);
+  const photos = {};
+  for (const id of photoIds) {
+    const blob = await getPhoto(id);
+    if (blob) photos[id] = await blobToDataUrl(blob);
+  }
+  const backup = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    readings,
+    settings,
+    photos,
+  };
+  const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `血壓備份_${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('已匯出備份檔');
+}
+
+async function importBackupFile(file) {
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    showToast('備份檔格式錯誤');
+    return;
+  }
+  if (!data || !Array.isArray(data.readings)) {
+    showToast('備份檔格式錯誤');
+    return;
+  }
+  if (!confirm(`確定要還原這份備份嗎？這會覆蓋目前所有紀錄與設定（備份中共 ${data.readings.length} 筆紀錄）。`)) return;
+
+  const existingPhotoIds = readings.map(r => r.photoId).filter(Boolean);
+  await deletePhotos(existingPhotoIds);
+
+  const photos = data.photos || {};
+  for (const [id, dataUrl] of Object.entries(photos)) {
+    try {
+      const blob = await dataUrlToBlob(dataUrl);
+      await savePhoto(id, blob);
+    } catch {}
+  }
+
+  readings = data.readings;
+  saveReadings(readings);
+  if (data.settings) {
+    settings = { ...loadSettings(), ...data.settings };
+    saveSettings(settings);
+  }
+  resetForm();
+  renderAll();
+  closeSettings();
+  showToast('已還原備份');
+}
+
+document.getElementById('exportBackupBtn').addEventListener('click', exportBackup);
+
+document.getElementById('importBackupBtn').addEventListener('click', () => {
+  document.getElementById('importBackupInput').click();
+});
+
+document.getElementById('importBackupInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  await importBackupFile(file);
+});
+
 function sendReminderEmail() {
   if (!settings.email) {
     showToast('請先在設定中輸入 Email');
