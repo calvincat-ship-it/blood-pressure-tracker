@@ -47,6 +47,22 @@
 
   <section class="card">
     <div class="chart-header">
+      <h2>日期範圍</h2>
+      <button type="button" id="clearDateFilterBtn" class="text-danger-btn">清除篩選</button>
+    </div>
+    <div class="form-row">
+      <label>起始日期
+        <input type="date" id="filterStart">
+      </label>
+      <label>結束日期
+        <input type="date" id="filterEnd">
+      </label>
+    </div>
+    <p class="settings-meta">套用於下方趨勢圖、歷史紀錄與匯出 CSV</p>
+  </section>
+
+  <section class="card">
+    <div class="chart-header">
       <h2>趨勢圖</h2>
       <select id="chartRange">
         <option value="14">近 14 筆</option>
@@ -109,11 +125,15 @@
 
   <section class="card">
     <div class="chart-header">
-      <h2>歷史紀錄</h2>
+      <button type="button" id="historyToggleBtn" class="section-toggle" aria-expanded="true">
+        <span id="historyToggleIcon">▾</span> 歷史紀錄
+      </button>
       <button type="button" id="clearAllBtn" class="text-danger-btn">清除全部</button>
     </div>
-    <div id="historyList" class="history-list"></div>
-    <p id="emptyState" class="empty-state" hidden>尚無紀錄，開始新增第一筆血壓記錄吧！</p>
+    <div id="historyBody">
+      <div id="historyList" class="history-list"></div>
+      <p id="emptyState" class="empty-state" hidden>尚無紀錄，開始新增第一筆血壓記錄吧！</p>
+    </div>
   </section>
 </main>
 

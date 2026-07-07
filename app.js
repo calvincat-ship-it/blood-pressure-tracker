@@ -89,6 +89,17 @@ let readings = loadReadings();
 let settings = loadSettings();
 let reminderDismissedThisSession = false;
 let pendingSendConfirmation = false;
+let dateFilter = { start: '', end: '' };
+let historyCollapsed = localStorage.getItem('bp_history_collapsed') === '1';
+
+function filteredReadings() {
+  if (!dateFilter.start && !dateFilter.end) return readings;
+  return readings.filter(r => {
+    if (dateFilter.start && r.date < dateFilter.start) return false;
+    if (dateFilter.end && r.date > dateFilter.end) return false;
+    return true;
+  });
+}
 
 function showToast(msg) {
   toast.textContent = msg;
@@ -162,17 +173,47 @@ form.addEventListener('submit', (e) => {
 cancelEditBtn.addEventListener('click', resetForm);
 
 document.getElementById('exportBtn').addEventListener('click', () => {
-  if (readings.length === 0) {
-    showToast('目前沒有資料可匯出');
+  const list = filteredReadings();
+  if (list.length === 0) {
+    showToast('此區間沒有資料可匯出');
     return;
   }
-  const blob = new Blob([buildCsv(readings)], { type: 'text/csv;charset=utf-8;' });
+  const blob = new Blob([buildCsv(list)], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = `血壓紀錄_${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
+});
+
+document.getElementById('filterStart').addEventListener('change', (e) => {
+  dateFilter.start = e.target.value;
+  renderAll();
+});
+
+document.getElementById('filterEnd').addEventListener('change', (e) => {
+  dateFilter.end = e.target.value;
+  renderAll();
+});
+
+document.getElementById('clearDateFilterBtn').addEventListener('click', () => {
+  dateFilter = { start: '', end: '' };
+  document.getElementById('filterStart').value = '';
+  document.getElementById('filterEnd').value = '';
+  renderAll();
+});
+
+function applyHistoryCollapsed() {
+  document.getElementById('historyBody').hidden = historyCollapsed;
+  document.getElementById('historyToggleIcon').textContent = historyCollapsed ? '▸' : '▾';
+  document.getElementById('historyToggleBtn').setAttribute('aria-expanded', String(!historyCollapsed));
+}
+
+document.getElementById('historyToggleBtn').addEventListener('click', () => {
+  historyCollapsed = !historyCollapsed;
+  localStorage.setItem('bp_history_collapsed', historyCollapsed ? '1' : '0');
+  applyHistoryCollapsed();
 });
 
 document.getElementById('clearAllBtn').addEventListener('click', () => {
@@ -369,8 +410,11 @@ function renderSummary() {
 }
 
 function renderHistory() {
-  const sorted = [...sortByDateTime(readings)].reverse();
+  const sorted = [...sortByDateTime(filteredReadings())].reverse();
   emptyState.hidden = sorted.length > 0;
+  emptyState.textContent = (dateFilter.start || dateFilter.end)
+    ? '此區間沒有紀錄'
+    : '尚無紀錄，開始新增第一筆血壓記錄吧！';
   historyList.innerHTML = sorted.map(r => {
     const c = classify(r.systolic, r.diastolic);
     return `
@@ -408,7 +452,7 @@ function renderChart() {
   ctx.clearRect(0, 0, cssWidth, cssHeight);
 
   const range = Number(chartRangeSelect.value);
-  const data = sortByDateTime(readings).slice(-range);
+  const data = sortByDateTime(filteredReadings()).slice(-range);
 
   if (data.length === 0) {
     ctx.fillStyle = '#9aa8b0';
@@ -487,6 +531,7 @@ function renderAll() {
 window.addEventListener('resize', () => renderChart());
 
 resetForm();
+applyHistoryCollapsed();
 renderAll();
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
