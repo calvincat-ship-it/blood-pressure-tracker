@@ -498,6 +498,7 @@ function removeMedTime(date, time) {
   const list = medLogs[date] || [];
   const idx = list.indexOf(time);
   if (idx === -1) return;
+  if (!confirm(`確定要刪除「${time} 服藥」這筆用藥記錄嗎？`)) return;
   list.splice(idx, 1);
   if (list.length === 0) delete medLogs[date];
   else medLogs[date] = list;
