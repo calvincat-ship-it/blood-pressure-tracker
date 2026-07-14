@@ -483,6 +483,7 @@ function renderMedCard() {
 function logMedicationNow() {
   const date = todayStr();
   const time = new Date().toTimeString().slice(0, 5);
+  if (!confirm(`確定要記錄「現在（${time}）服藥」嗎？`)) return;
   const list = medLogs[date] || [];
   list.push(time);
   medLogs[date] = list;
