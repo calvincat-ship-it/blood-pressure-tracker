@@ -240,6 +240,26 @@
 
       <hr class="settings-divider">
 
+      <h3 class="settings-section-title">每日用藥提醒</h3>
+      <label class="checkbox-row">
+        <input type="checkbox" id="settingMedReminderEnabled">
+        啟用每日用藥提醒
+      </label>
+      <div class="form-row three">
+        <label>用藥時間
+          <input type="time" id="settingMedReminderTime">
+        </label>
+        <label>逾時提醒 <span class="unit">分鐘</span>
+          <input type="number" id="settingMedReminderOverdue" min="0" max="720" value="30">
+        </label>
+        <label>提醒間隔 <span class="unit">分鐘</span>
+          <input type="number" id="settingMedReminderRepeat" min="5" max="720" value="30">
+        </label>
+      </div>
+      <p class="settings-meta">超過「用藥時間＋逾時分鐘」仍未記錄服藥時開始提醒，並依提醒間隔重複；一旦按下「記錄現在服藥」即自動停止，隔天再重新判斷。此頁面需保持開啟（可切到背景分頁）才能提醒。</p>
+
+      <hr class="settings-divider">
+
       <h3 class="settings-section-title">分享與匯出</h3>
       <div class="form-actions">
         <button type="button" id="shareBtn" class="secondary-btn">📤 分享紀錄</button>

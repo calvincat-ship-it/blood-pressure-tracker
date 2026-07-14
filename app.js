@@ -113,6 +113,7 @@ function loadSettings() {
     email: '', frequency: 'weekly', customDays: 14, autoClear: false, lastSentAt: null,
     reminderEnabled: false, reminderTimes: ['08:00', '13:00', '20:00'],
     highBpAlertEnabled: false, highBpAlertMode: 'auto', highBpCustomSystolic: 130, highBpCustomDiastolic: 80,
+    medReminderEnabled: false, medReminderTime: '08:00', medReminderOverdueMin: 30, medReminderRepeatMin: 30,
   };
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY)) };
@@ -488,6 +489,7 @@ function logMedicationNow() {
   saveMedLogs(medLogs);
   renderMedCard();
   renderHistory();
+  closeMedReminderNotifications();
   showToast(`已記錄服藥時間 ${time}`);
 }
 
@@ -553,6 +555,10 @@ function openSettings() {
   document.getElementById('highBpAlertMode').value = settings.highBpAlertMode;
   document.getElementById('highBpCustomSystolic').value = settings.highBpCustomSystolic;
   document.getElementById('highBpCustomDiastolic').value = settings.highBpCustomDiastolic;
+  document.getElementById('settingMedReminderEnabled').checked = settings.medReminderEnabled;
+  document.getElementById('settingMedReminderTime').value = settings.medReminderTime;
+  document.getElementById('settingMedReminderOverdue').value = settings.medReminderOverdueMin;
+  document.getElementById('settingMedReminderRepeat').value = settings.medReminderRepeatMin;
   toggleCustomDaysRow();
   toggleHighBpCustomRow();
   toggleExportCustomRow();
@@ -615,6 +621,16 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
   settings.highBpAlertMode = document.getElementById('highBpAlertMode').value;
   settings.highBpCustomSystolic = Number(document.getElementById('highBpCustomSystolic').value) || 130;
   settings.highBpCustomDiastolic = Number(document.getElementById('highBpCustomDiastolic').value) || 80;
+
+  const medReminderEnabled = document.getElementById('settingMedReminderEnabled').checked;
+  if (medReminderEnabled && !reminderEnabled && 'Notification' in window && Notification.permission === 'default') {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') showToast('未取得通知權限，提醒將以應用內提示顯示');
+  }
+  settings.medReminderEnabled = medReminderEnabled;
+  settings.medReminderTime = document.getElementById('settingMedReminderTime').value || '08:00';
+  settings.medReminderOverdueMin = Math.max(0, Number(document.getElementById('settingMedReminderOverdue').value) || 0);
+  settings.medReminderRepeatMin = Math.max(5, Number(document.getElementById('settingMedReminderRepeat').value) || 30);
 
   saveSettings(settings);
   closeSettings();
@@ -794,7 +810,7 @@ historyList.addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-action]');
   if (!btn) return;
   const id = btn.closest('.history-item').dataset.id;
-  if (btn.dataset.action === 'edit') startEdit(id);
+  if (btn.dataset.action === 'edit') { closeHistory(); startEdit(id); }
   if (btn.dataset.action === 'delete') deleteReading(id);
   if (btn.dataset.action === 'view-photo') viewPhoto(id);
 });
@@ -1038,8 +1054,71 @@ function checkMeasurementReminders() {
   if (changed) saveFiredSlots(fired);
 }
 
-setInterval(checkMeasurementReminders, 20000);
-checkMeasurementReminders();
+// ---- Daily medication reminder ----
+
+const MED_REMINDER_STATE_KEY = 'bp_med_reminder_state';
+
+function loadMedReminderState() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(MED_REMINDER_STATE_KEY));
+    if (raw && raw.date === todayStr()) return raw;
+  } catch {}
+  return { date: todayStr(), lastFiredAt: 0 };
+}
+
+function saveMedReminderState(state) {
+  localStorage.setItem(MED_REMINDER_STATE_KEY, JSON.stringify(state));
+}
+
+async function fireMedReminder() {
+  const body = `今天還沒記錄服藥（用藥時間 ${settings.medReminderTime}），記得吃藥並按下「記錄現在服藥」。`;
+  if ('Notification' in window && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification('💊 用藥提醒', { body, icon: 'icons/icon-192.png', tag: 'bp-med-reminder', renotify: true });
+      return;
+    } catch {}
+  }
+  showToast(`💊 ${body}`);
+}
+
+async function closeMedReminderNotifications() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const notifs = await reg.getNotifications({ tag: 'bp-med-reminder' });
+    notifs.forEach(n => n.close());
+  } catch {}
+}
+
+function checkMedReminder() {
+  if (!settings.medReminderEnabled) return;
+  const today = todayStr();
+  if (medTimesFor(today).length > 0) return; // already recorded medication today
+
+  const [h, m] = (settings.medReminderTime || '08:00').split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return;
+  const due = new Date();
+  due.setHours(h, m, 0, 0);
+  due.setMinutes(due.getMinutes() + (Number(settings.medReminderOverdueMin) || 0));
+  const now = Date.now();
+  if (now < due.getTime()) return; // scheduled time + grace period not reached yet
+
+  const state = loadMedReminderState();
+  const repeatMs = Math.max(5, Number(settings.medReminderRepeatMin) || 30) * 60000;
+  if (state.date === today && state.lastFiredAt && (now - state.lastFiredAt) < repeatMs) return;
+
+  fireMedReminder();
+  saveMedReminderState({ date: today, lastFiredAt: now });
+}
+
+function checkAllReminders() {
+  checkMeasurementReminders();
+  checkMedReminder();
+}
+
+setInterval(checkAllReminders, 20000);
+checkAllReminders();
 
 resetForm();
 renderAll();
