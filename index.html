@@ -17,24 +17,8 @@
 <header class="app-header">
   <h1>血壓記錄</h1>
   <div class="header-actions">
-    <button id="shareBtn" class="icon-btn" title="分享紀錄" aria-label="分享紀錄">📤</button>
-    <div class="export-menu-wrapper">
-      <button id="exportBtn" class="icon-btn" title="匯出 CSV" aria-label="匯出 CSV">⬇</button>
-      <div id="exportMenu" class="export-menu" hidden>
-        <button type="button" class="export-menu-item" data-range="all">全部</button>
-        <button type="button" class="export-menu-item" data-range="30">最近 30 天</button>
-        <button type="button" class="export-menu-item" data-range="custom">設定日期</button>
-        <div id="exportCustomRange" class="export-custom-range" hidden>
-          <label>起始日期
-            <input type="date" id="exportStart">
-          </label>
-          <label>結束日期
-            <input type="date" id="exportEnd">
-          </label>
-          <button type="button" id="exportConfirmBtn" class="primary-btn">匯出 CSV</button>
-        </div>
-      </div>
-    </div>
+    <button id="chartBtn" class="icon-btn" title="趨勢圖" aria-label="趨勢圖">📈</button>
+    <button id="historyBtn" class="icon-btn" title="歷史紀錄" aria-label="歷史紀錄">📋</button>
     <button id="settingsBtn" class="icon-btn" title="設定" aria-label="設定">⚙</button>
   </div>
 </header>
@@ -62,32 +46,7 @@
   </section>
 
   <section class="card">
-    <div class="chart-header">
-      <h2>趨勢圖</h2>
-      <select id="chartRange">
-        <option value="14">近 14 筆</option>
-        <option value="30" selected>近 30 筆</option>
-        <option value="9999">全部</option>
-      </select>
-    </div>
-    <div class="form-row">
-      <label>起始日期
-        <input type="date" id="chartFilterStart">
-      </label>
-      <label>結束日期
-        <input type="date" id="chartFilterEnd">
-      </label>
-    </div>
-    <canvas id="trendChart" height="180"></canvas>
-    <div class="legend">
-      <span><i class="dot systolic"></i>收縮壓</span>
-      <span><i class="dot diastolic"></i>舒張壓</span>
-      <span><i class="dot pulse"></i>心跳</span>
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>新增紀錄</h2>
+    <h2>新增血壓記錄</h2>
     <form id="entryForm">
       <input type="hidden" id="editId">
       <div class="form-row">
@@ -133,35 +92,75 @@
         </div>
       </div>
       <div class="form-actions">
-        <button type="submit" class="primary-btn" id="submitBtn">新增紀錄</button>
+        <button type="submit" class="primary-btn" id="submitBtn">新增血壓記錄</button>
         <button type="button" class="secondary-btn" id="cancelEditBtn" hidden>取消編輯</button>
       </div>
     </form>
   </section>
 
-  <section class="card">
-    <div class="chart-header">
-      <button type="button" id="historyToggleBtn" class="section-toggle" aria-expanded="true">
-        <span id="historyToggleIcon">▾</span> 歷史紀錄
-      </button>
-      <button type="button" id="clearAllBtn" class="text-danger-btn">清除全部</button>
-    </div>
-    <div id="historyBody">
-      <div class="form-row">
-        <label>起始日期
-          <input type="date" id="historyFilterStart">
-        </label>
-        <label>結束日期
-          <input type="date" id="historyFilterEnd">
-        </label>
-      </div>
-      <div id="historyList" class="history-list"></div>
-      <p id="emptyState" class="empty-state" hidden>尚無紀錄，開始新增第一筆血壓記錄吧！</p>
-    </div>
+  <section class="card med-card" id="medCard">
+    <h2>用藥記錄</h2>
+    <p id="medTodayStatus" class="med-status"></p>
+    <button type="button" id="logMedBtn" class="primary-btn med-log-btn">💊 記錄現在服藥</button>
+    <div id="medTodayList" class="med-today-list"></div>
   </section>
 </main>
 
 <div id="toast" class="toast" hidden></div>
+
+<div id="chartModal" class="modal-backdrop" hidden>
+  <div class="modal-sheet">
+    <div class="modal-header">
+      <h2>趨勢圖</h2>
+      <button type="button" id="closeChartBtn" class="icon-btn" aria-label="關閉">✕</button>
+    </div>
+    <div class="chart-header">
+      <span class="settings-section-title">顯示範圍</span>
+      <select id="chartRange">
+        <option value="14">近 14 筆</option>
+        <option value="30" selected>近 30 筆</option>
+        <option value="9999">全部</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>起始日期
+        <input type="date" id="chartFilterStart">
+      </label>
+      <label>結束日期
+        <input type="date" id="chartFilterEnd">
+      </label>
+    </div>
+    <canvas id="trendChart" height="180"></canvas>
+    <div class="legend">
+      <span><i class="dot systolic"></i>收縮壓</span>
+      <span><i class="dot diastolic"></i>舒張壓</span>
+      <span><i class="dot pulse"></i>心跳</span>
+    </div>
+  </div>
+</div>
+
+<div id="historyModal" class="modal-backdrop" hidden>
+  <div class="modal-sheet">
+    <div class="modal-header">
+      <h2>歷史紀錄</h2>
+      <button type="button" id="closeHistoryBtn" class="icon-btn" aria-label="關閉">✕</button>
+    </div>
+    <div class="chart-header">
+      <span class="settings-section-title">篩選日期</span>
+      <button type="button" id="clearAllBtn" class="text-danger-btn">清除全部</button>
+    </div>
+    <div class="form-row">
+      <label>起始日期
+        <input type="date" id="historyFilterStart">
+      </label>
+      <label>結束日期
+        <input type="date" id="historyFilterEnd">
+      </label>
+    </div>
+    <div id="historyList" class="history-list"></div>
+    <p id="emptyState" class="empty-state" hidden>尚無紀錄，開始新增第一筆血壓記錄吧！</p>
+  </div>
+</div>
 
 <div id="settingsModal" class="modal-backdrop" hidden>
   <div class="modal-sheet">
@@ -235,6 +234,31 @@
         </label>
       </div>
       <p class="settings-meta">自動模式採用「第一期高血壓」以上（收縮壓 ≥130 或舒張壓 ≥80）作為判定標準。</p>
+
+      <hr class="settings-divider">
+
+      <h3 class="settings-section-title">分享與匯出</h3>
+      <div class="form-actions">
+        <button type="button" id="shareBtn" class="secondary-btn">📤 分享紀錄</button>
+      </div>
+      <label class="full">匯出範圍
+        <select id="exportRange">
+          <option value="all">全部</option>
+          <option value="30">最近 30 天</option>
+          <option value="custom">自訂日期</option>
+        </select>
+      </label>
+      <div class="form-row" id="exportCustomRow" hidden>
+        <label>起始日期
+          <input type="date" id="exportStart">
+        </label>
+        <label>結束日期
+          <input type="date" id="exportEnd">
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="button" id="exportCsvBtn" class="secondary-btn">⬇ 匯出 CSV</button>
+      </div>
 
       <hr class="settings-divider">
 

@@ -367,6 +367,71 @@ input:focus, select:focus {
   padding: 20px 0;
 }
 
+.med-status {
+  font-size: 13px;
+  margin: 0 0 10px;
+}
+.med-status-pending { color: var(--stage1); font-weight: 600; }
+.med-status-done { color: var(--normal); font-weight: 600; }
+
+.med-log-btn {
+  width: 100%;
+  flex: none;
+}
+
+.med-today-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.med-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #eaf4ee;
+  color: var(--primary-dark);
+  border: 1px solid #cfe6d9;
+  border-radius: 999px;
+  padding: 4px 6px 4px 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.med-chip button {
+  background: rgba(0,0,0,0.08);
+  border: none;
+  color: var(--text-muted);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.med-inline {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  display: inline-block;
+  margin-top: 2px;
+  width: fit-content;
+}
+.med-inline-done {
+  background: #eaf4ee;
+  color: var(--normal);
+  border: 1px solid #cfe6d9;
+}
+.med-inline-pending {
+  background: #fdf1e6;
+  color: var(--stage1);
+  border: 1px solid #f3d9bf;
+}
+
 .badge-normal { background: var(--normal); }
 .badge-elevated { background: var(--elevated); }
 .badge-stage1 { background: var(--stage1); }

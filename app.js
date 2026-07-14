@@ -89,6 +89,25 @@ function saveReadings(readings) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(readings));
 }
 
+const MED_KEY = 'bp_med_logs_v1';
+
+/** @returns {Object.<string,string[]>} map of date(YYYY-MM-DD) -> array of medication times(HH:MM) */
+function loadMedLogs() {
+  try {
+    return JSON.parse(localStorage.getItem(MED_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveMedLogs(m) {
+  localStorage.setItem(MED_KEY, JSON.stringify(m));
+}
+
+function medTimesFor(date) {
+  return (medLogs[date] || []).slice().sort();
+}
+
 function loadSettings() {
   const defaults = {
     email: '', frequency: 'weekly', customDays: 14, autoClear: false, lastSentAt: null,
@@ -174,12 +193,12 @@ const toast = document.getElementById('toast');
 const chartRangeSelect = document.getElementById('chartRange');
 
 let readings = loadReadings();
+let medLogs = loadMedLogs();
 let settings = loadSettings();
 let reminderDismissedThisSession = false;
 let pendingSendConfirmation = false;
 let chartDateFilter = { start: '', end: '' };
 let historyDateFilter = { start: '', end: '' };
-let historyCollapsed = localStorage.getItem('bp_history_collapsed') === '1';
 let pendingPhotoBlob = null;
 let pendingPhotoRemoved = false;
 let currentPhotoId = null;
@@ -203,7 +222,7 @@ function showToast(msg) {
 function resetForm() {
   form.reset();
   editIdInput.value = '';
-  submitBtn.textContent = '新增紀錄';
+  submitBtn.textContent = '新增血壓記錄';
   cancelEditBtn.hidden = true;
   pendingPhotoBlob = null;
   pendingPhotoRemoved = false;
@@ -353,51 +372,29 @@ function exportCsv(list) {
   URL.revokeObjectURL(url);
 }
 
-const exportMenu = document.getElementById('exportMenu');
-const exportCustomRange = document.getElementById('exportCustomRange');
+const exportRangeSelect = document.getElementById('exportRange');
 
-function closeExportMenu() {
-  exportMenu.hidden = true;
-  exportCustomRange.hidden = true;
+function toggleExportCustomRow() {
+  document.getElementById('exportCustomRow').hidden = exportRangeSelect.value !== 'custom';
 }
 
-document.getElementById('exportBtn').addEventListener('click', (e) => {
-  e.stopPropagation();
-  exportMenu.hidden = !exportMenu.hidden;
-  if (exportMenu.hidden) exportCustomRange.hidden = true;
-});
+exportRangeSelect.addEventListener('change', toggleExportCustomRow);
 
-document.addEventListener('click', (e) => {
-  if (!exportMenu.hidden && !exportMenu.contains(e.target) && e.target.id !== 'exportBtn') {
-    closeExportMenu();
+document.getElementById('exportCsvBtn').addEventListener('click', () => {
+  const type = exportRangeSelect.value;
+  if (type === '30') {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 29);
+    const toStr = (d) => d.toISOString().slice(0, 10);
+    exportCsv(filterByRange(readings, { start: toStr(start), end: toStr(end) }));
+  } else if (type === 'custom') {
+    const start = document.getElementById('exportStart').value;
+    const end = document.getElementById('exportEnd').value;
+    exportCsv(filterByRange(readings, { start, end }));
+  } else {
+    exportCsv(readings);
   }
-});
-
-exportMenu.querySelectorAll('.export-menu-item').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    const rangeType = btn.dataset.range;
-    if (rangeType === 'custom') {
-      exportCustomRange.hidden = false;
-      return;
-    }
-    if (rangeType === 'all') {
-      exportCsv(readings);
-    } else if (rangeType === '30') {
-      const end = new Date();
-      const start = new Date();
-      start.setDate(start.getDate() - 29);
-      const toStr = (d) => d.toISOString().slice(0, 10);
-      exportCsv(filterByRange(readings, { start: toStr(start), end: toStr(end) }));
-    }
-    closeExportMenu();
-  });
-});
-
-document.getElementById('exportConfirmBtn').addEventListener('click', () => {
-  const start = document.getElementById('exportStart').value;
-  const end = document.getElementById('exportEnd').value;
-  exportCsv(filterByRange(readings, { start, end }));
-  closeExportMenu();
 });
 
 document.getElementById('chartFilterStart').addEventListener('change', (e) => {
@@ -418,18 +415,6 @@ document.getElementById('historyFilterStart').addEventListener('change', (e) => 
 document.getElementById('historyFilterEnd').addEventListener('change', (e) => {
   historyDateFilter.end = e.target.value;
   renderHistory();
-});
-
-function applyHistoryCollapsed() {
-  document.getElementById('historyBody').hidden = historyCollapsed;
-  document.getElementById('historyToggleIcon').textContent = historyCollapsed ? '▸' : '▾';
-  document.getElementById('historyToggleBtn').setAttribute('aria-expanded', String(!historyCollapsed));
-}
-
-document.getElementById('historyToggleBtn').addEventListener('click', () => {
-  historyCollapsed = !historyCollapsed;
-  localStorage.setItem('bp_history_collapsed', historyCollapsed ? '1' : '0');
-  applyHistoryCollapsed();
 });
 
 document.getElementById('clearAllBtn').addEventListener('click', () => {
@@ -468,9 +453,85 @@ document.getElementById('shareBtn').addEventListener('click', async () => {
     }
   } else {
     showToast('此瀏覽器不支援分享，改為下載 CSV');
-    document.getElementById('exportBtn').click();
+    exportCsv(readings);
   }
 });
+
+// ---- Medication log ----
+
+function renderMedCard() {
+  const today = todayStr();
+  const times = medTimesFor(today);
+  const status = document.getElementById('medTodayStatus');
+  const listEl = document.getElementById('medTodayList');
+  if (times.length === 0) {
+    status.textContent = '今日尚未記錄服藥，服藥後請按下按鈕。';
+    status.className = 'med-status med-status-pending';
+    listEl.innerHTML = '';
+  } else {
+    status.textContent = `今日已記錄服藥 ${times.length} 次`;
+    status.className = 'med-status med-status-done';
+    listEl.innerHTML = times.map(t =>
+      `<span class="med-chip">💊 ${t}<button type="button" data-time="${t}" aria-label="移除 ${t} 服藥紀錄">✕</button></span>`
+    ).join('');
+  }
+}
+
+function logMedicationNow() {
+  const date = todayStr();
+  const time = new Date().toTimeString().slice(0, 5);
+  const list = medLogs[date] || [];
+  list.push(time);
+  medLogs[date] = list;
+  saveMedLogs(medLogs);
+  renderMedCard();
+  renderHistory();
+  showToast(`已記錄服藥時間 ${time}`);
+}
+
+function removeMedTime(date, time) {
+  const list = medLogs[date] || [];
+  const idx = list.indexOf(time);
+  if (idx === -1) return;
+  list.splice(idx, 1);
+  if (list.length === 0) delete medLogs[date];
+  else medLogs[date] = list;
+  saveMedLogs(medLogs);
+  renderMedCard();
+  renderHistory();
+}
+
+document.getElementById('logMedBtn').addEventListener('click', logMedicationNow);
+
+document.getElementById('medTodayList').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-time]');
+  if (!btn) return;
+  removeMedTime(todayStr(), btn.dataset.time);
+});
+
+// ---- Chart & history modals ----
+
+const chartModal = document.getElementById('chartModal');
+const historyModal = document.getElementById('historyModal');
+
+function openChart() {
+  chartModal.hidden = false;
+  renderChart();
+}
+function closeChart() { chartModal.hidden = true; }
+function openHistory() {
+  historyModal.hidden = false;
+  renderHistory();
+}
+function closeHistory() { historyModal.hidden = true; }
+
+document.getElementById('chartBtn').addEventListener('click', openChart);
+document.getElementById('closeChartBtn').addEventListener('click', closeChart);
+chartModal.addEventListener('click', (e) => { if (e.target === chartModal) closeChart(); });
+
+document.getElementById('historyBtn').addEventListener('click', openHistory);
+document.getElementById('closeHistoryBtn').addEventListener('click', closeHistory);
+historyModal.addEventListener('click', (e) => { if (e.target === historyModal) closeHistory(); });
 
 // ---- Settings & scheduled email reminder ----
 
@@ -492,6 +553,7 @@ function openSettings() {
   document.getElementById('highBpCustomDiastolic').value = settings.highBpCustomDiastolic;
   toggleCustomDaysRow();
   toggleHighBpCustomRow();
+  toggleExportCustomRow();
   renderSettingsMeta();
   settingsModal.hidden = false;
 }
@@ -587,9 +649,10 @@ async function exportBackup() {
     if (blob) photos[id] = await blobToDataUrl(blob);
   }
   const backup = {
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     readings,
+    medLogs,
     settings,
     photos,
   };
@@ -630,6 +693,8 @@ async function importBackupFile(file) {
 
   readings = data.readings;
   saveReadings(readings);
+  medLogs = (data.medLogs && typeof data.medLogs === 'object') ? data.medLogs : {};
+  saveMedLogs(medLogs);
   if (data.settings) {
     settings = { ...loadSettings(), ...data.settings };
     saveSettings(settings);
@@ -796,14 +861,23 @@ function renderHistory() {
   emptyState.textContent = (historyDateFilter.start || historyDateFilter.end)
     ? '此區間沒有紀錄'
     : '尚無紀錄，開始新增第一筆血壓記錄吧！';
+  const today = todayStr();
   historyList.innerHTML = sorted.map(r => {
     const c = classify(r.systolic, r.diastolic);
+    const medTimes = medTimesFor(r.date);
+    let medBadge = '';
+    if (medTimes.length > 0) {
+      medBadge = `<span class="med-inline med-inline-done">💊 服藥 ${medTimes.join('、')}</span>`;
+    } else if (r.date === today) {
+      medBadge = `<span class="med-inline med-inline-pending">還沒吃藥</span>`;
+    }
     return `
       <div class="history-item" data-id="${r.id}">
         <div class="history-main">
           <span class="history-date">${fmtDate(r.date)} ${r.time}${r.tag ? ` · ${r.tag}` : ''}</span>
           <span class="history-values">${r.systolic}/${r.diastolic}${r.pulse ? `<span class="pulse-inline">♥ ${r.pulse}</span>` : ''}</span>
           <span class="history-tag badge-${c.cls}">${c.label}</span>
+          ${medBadge}
           ${r.note ? `<span class="history-note">${escapeHtml(r.note)}</span>` : ''}
         </div>
         <div class="history-actions">
@@ -905,6 +979,7 @@ function renderChart() {
 
 function renderAll() {
   renderSummary();
+  renderMedCard();
   renderHistory();
   renderChart();
   renderReminder();
@@ -965,7 +1040,6 @@ setInterval(checkMeasurementReminders, 20000);
 checkMeasurementReminders();
 
 resetForm();
-applyHistoryCollapsed();
 renderAll();
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
