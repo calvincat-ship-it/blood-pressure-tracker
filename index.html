@@ -68,29 +68,32 @@
           <input type="number" id="fieldPulse" inputmode="numeric" min="30" max="220">
         </label>
       </div>
-      <div class="form-row">
-        <label>時段
-          <select id="fieldTag">
-            <option value="">未指定</option>
-            <option value="起床">起床</option>
-            <option value="睡前">睡前</option>
-            <option value="飯後">飯後</option>
-            <option value="運動後">運動後</option>
-            <option value="其他">其他</option>
-          </select>
-        </label>
-      </div>
-      <label class="full">備註
-        <input type="text" id="fieldNote" maxlength="60" placeholder="選填">
-      </label>
-      <div class="photo-row">
-        <button type="button" id="photoCaptureBtn" class="secondary-btn">📷 拍攝照片</button>
-        <input type="file" accept="image/*" capture="environment" id="fieldPhotoInput" hidden>
-        <div id="photoPreviewWrap" class="photo-preview-wrap" hidden>
-          <img id="photoPreview" alt="照片預覽">
-          <button type="button" id="removePhotoBtn" class="text-danger-btn">移除照片</button>
+      <details class="more-fields" id="moreFields">
+        <summary>更多選項（時段 / 備註 / 照片）</summary>
+        <div class="form-row">
+          <label>時段
+            <select id="fieldTag">
+              <option value="">未指定</option>
+              <option value="起床">起床</option>
+              <option value="睡前">睡前</option>
+              <option value="飯後">飯後</option>
+              <option value="運動後">運動後</option>
+              <option value="其他">其他</option>
+            </select>
+          </label>
         </div>
-      </div>
+        <label class="full">備註
+          <input type="text" id="fieldNote" maxlength="60" placeholder="選填">
+        </label>
+        <div class="photo-row">
+          <button type="button" id="photoCaptureBtn" class="secondary-btn">📷 拍攝照片</button>
+          <input type="file" accept="image/*" capture="environment" id="fieldPhotoInput" hidden>
+          <div id="photoPreviewWrap" class="photo-preview-wrap" hidden>
+            <img id="photoPreview" alt="照片預覽">
+            <button type="button" id="removePhotoBtn" class="text-danger-btn">移除照片</button>
+          </div>
+        </div>
+      </details>
       <div class="form-actions">
         <button type="submit" class="primary-btn" id="submitBtn">新增血壓記錄</button>
         <button type="button" class="secondary-btn" id="cancelEditBtn" hidden>取消編輯</button>

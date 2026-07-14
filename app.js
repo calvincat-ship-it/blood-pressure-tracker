@@ -221,6 +221,7 @@ function showToast(msg) {
 
 function resetForm() {
   form.reset();
+  document.getElementById('moreFields').open = false;
   editIdInput.value = '';
   submitBtn.textContent = '新增血壓記錄';
   cancelEditBtn.hidden = true;
@@ -259,6 +260,7 @@ async function startEdit(id) {
   document.getElementById('fieldPulse').value = r.pulse ?? '';
   document.getElementById('fieldTag').value = r.tag || '';
   document.getElementById('fieldNote').value = r.note || '';
+  document.getElementById('moreFields').open = !!(r.tag || r.note || r.photoId);
   submitBtn.textContent = '儲存變更';
   cancelEditBtn.hidden = false;
   pendingPhotoBlob = null;

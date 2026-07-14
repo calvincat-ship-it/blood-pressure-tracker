@@ -122,14 +122,14 @@ main {
 .card {
   background: var(--card-bg);
   border-radius: var(--radius);
-  padding: 16px;
-  margin-bottom: 14px;
+  padding: 13px 14px;
+  margin-bottom: 10px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
 
 .card h2 {
   font-size: 16px;
-  margin: 0 0 10px;
+  margin: 0 0 8px;
   color: var(--primary-dark);
 }
 
@@ -230,7 +230,32 @@ main {
 .dot.diastolic { background: #2f6690; }
 .dot.pulse { background: #8a6dc9; }
 
-form { display: flex; flex-direction: column; gap: 10px; }
+form { display: flex; flex-direction: column; gap: 8px; }
+
+.more-fields {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0 10px;
+}
+
+.more-fields > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--primary-dark);
+  font-weight: 600;
+  padding: 9px 2px;
+  list-style-position: inside;
+}
+
+.more-fields[open] > summary {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+
+.more-fields > .form-row,
+.more-fields > label.full {
+  margin-bottom: 10px;
+}
 
 .form-row {
   display: flex;
