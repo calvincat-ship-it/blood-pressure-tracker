@@ -715,7 +715,6 @@ async function importBackupFile(file) {
   saveReadings(readings);
   medLogs = (data.medLogs && typeof data.medLogs === 'object') ? data.medLogs : {};
   saveMedLogs(medLogs);
-  pruneOldMedLogs();
   if (data.settings) {
     settings = { ...loadSettings(), ...data.settings };
     saveSettings(settings);
@@ -1115,32 +1114,18 @@ function checkMedReminder() {
   saveMedReminderState({ date: today, lastFiredAt: now });
 }
 
-// ---- Daily medication-log reset (clears at 00:00) ----
+// ---- Daily display reset at 00:00 ----
+// The 用藥記錄 card always shows only today's entries; older days are kept in
+// storage so the 歷史紀錄 keeps each day's medication times for the doctor.
+// This just refreshes the views when the date rolls over while the app stays open.
 
 let activeDay = todayStr();
 
-function pruneOldMedLogs() {
-  const today = todayStr();
-  let changed = false;
-  for (const date of Object.keys(medLogs)) {
-    if (date !== today) {
-      delete medLogs[date];
-      changed = true;
-    }
-  }
-  if (changed) saveMedLogs(medLogs);
-  return changed;
-}
-
 function handleDayRollover() {
   const today = todayStr();
-  const pruned = pruneOldMedLogs();
   if (today !== activeDay) {
     activeDay = today;
     renderAll();
-  } else if (pruned) {
-    renderMedCard();
-    renderHistory();
   }
 }
 
@@ -1150,7 +1135,6 @@ function checkAllReminders() {
   checkMedReminder();
 }
 
-pruneOldMedLogs();
 setInterval(checkAllReminders, 20000);
 checkAllReminders();
 
