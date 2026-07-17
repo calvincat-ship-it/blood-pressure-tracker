@@ -463,9 +463,10 @@ input:disabled {
   border: 1px solid #cfe6d9;
 }
 .med-inline-pending {
-  background: #fdf1e6;
-  color: var(--stage1);
-  border: 1px solid #f3d9bf;
+  background: #fdecea;
+  color: var(--crisis);
+  border: 1px solid #f3c9c5;
+  font-weight: 700;
 }
 
 .badge-normal { background: var(--normal); }

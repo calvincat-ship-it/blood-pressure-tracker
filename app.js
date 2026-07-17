@@ -939,16 +939,19 @@ function renderHistory() {
   emptyState.textContent = (historyDateFilter.start || historyDateFilter.end)
     ? '此區間沒有紀錄'
     : '尚無紀錄，開始新增第一筆血壓記錄吧！';
-  const today = todayStr();
   historyList.innerHTML = sorted.map(r => {
     const c = classify(r.systolic, r.diastolic);
-    const medTimes = medTimesFor(r.date);
-    let medBadge = '';
-    if (medTimes.length > 0) {
-      medBadge = `<span class="med-inline med-inline-done">💊 服藥 ${medTimes.join('、')}</span>`;
-    } else if (r.date === today) {
-      medBadge = `<span class="med-inline med-inline-pending">還沒吃藥</span>`;
+    // Per-reading medication status: the most recent medication taken at or
+    // before this reading's time on the same day. Readings before the day's
+    // first dose lock to 尚未用藥 (red); later readings show that dose time.
+    const medTimes = medTimesFor(r.date); // sorted ascending
+    let lastMedBefore = null;
+    for (const t of medTimes) {
+      if (t <= r.time) lastMedBefore = t; else break;
     }
+    const medBadge = lastMedBefore
+      ? `<span class="med-inline med-inline-done">💊 服藥 ${lastMedBefore}</span>`
+      : `<span class="med-inline med-inline-pending">尚未用藥</span>`;
     return `
       <div class="history-item" data-id="${r.id}">
         <div class="history-main">
