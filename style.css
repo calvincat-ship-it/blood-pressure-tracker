@@ -290,6 +290,17 @@ input:focus, select:focus {
   outline-offset: 1px;
 }
 
+input:disabled {
+  background: #eef1f3;
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.use-now-row {
+  font-size: 13px;
+  color: var(--text);
+}
+
 .form-actions {
   display: flex;
   gap: 10px;

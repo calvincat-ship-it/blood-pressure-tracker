@@ -184,6 +184,21 @@ function fmtDate(dateStr) {
   return `${m}/${d}`;
 }
 
+// Local calendar date (YYYY-MM-DD) using the device's own timezone.
+// IMPORTANT: never use Date.toISOString() for a date — that is UTC and is a
+// day behind for UTC+ timezones (e.g. Taiwan) between local midnight and the
+// UTC-offset hour, which desynced the entry date and the daily med-card reset.
+function localDateStr(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function localTimeStr(d = new Date()) {
+  return d.toTimeString().slice(0, 5);
+}
+
 const form = document.getElementById('entryForm');
 const editIdInput = document.getElementById('editId');
 const submitBtn = document.getElementById('submitBtn');
@@ -230,9 +245,26 @@ function resetForm() {
   pendingPhotoRemoved = false;
   currentPhotoId = null;
   hidePhotoPreview();
+  document.getElementById('useNowTime').checked = true;
+  applyUseNowTime();
+}
+
+function refreshNowFields() {
   const now = new Date();
-  document.getElementById('fieldDate').value = now.toISOString().slice(0, 10);
-  document.getElementById('fieldTime').value = now.toTimeString().slice(0, 5);
+  document.getElementById('fieldDate').value = localDateStr(now);
+  document.getElementById('fieldTime').value = localTimeStr(now);
+}
+
+// When "自動使用現在時間" is on, the date/time fields are locked to the current
+// device time (and refreshed to "now"); turning it off lets the user set the
+// blood-pressure record time manually.
+function applyUseNowTime() {
+  const useNow = document.getElementById('useNowTime').checked;
+  const dateEl = document.getElementById('fieldDate');
+  const timeEl = document.getElementById('fieldTime');
+  dateEl.disabled = useNow;
+  timeEl.disabled = useNow;
+  if (useNow) refreshNowFields();
 }
 
 function showPhotoPreview(blob) {
@@ -254,6 +286,8 @@ async function startEdit(id) {
   const r = readings.find(x => x.id === id);
   if (!r) return;
   editIdInput.value = r.id;
+  document.getElementById('useNowTime').checked = false;
+  applyUseNowTime();
   document.getElementById('fieldDate').value = r.date;
   document.getElementById('fieldTime').value = r.time;
   document.getElementById('fieldSystolic').value = r.systolic;
@@ -288,6 +322,23 @@ function deleteReading(id) {
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
+
+  // When 自動使用現在時間 is on, force the device's current time at the moment of
+  // submit — never trust a possibly-stale field left over from before midnight.
+  let entryDate, entryTime;
+  if (document.getElementById('useNowTime').checked) {
+    const now = new Date();
+    entryDate = localDateStr(now);
+    entryTime = localTimeStr(now);
+  } else {
+    entryDate = document.getElementById('fieldDate').value;
+    entryTime = document.getElementById('fieldTime').value;
+    if (!entryDate || !entryTime) {
+      showToast('請填寫日期與時間');
+      return;
+    }
+  }
+
   const systolic = Number(document.getElementById('fieldSystolic').value);
   const diastolic = Number(document.getElementById('fieldDiastolic').value);
   const pulseRaw = document.getElementById('fieldPulse').value;
@@ -307,8 +358,8 @@ form.addEventListener('submit', async (e) => {
 
   const entry = {
     id: editIdInput.value || crypto.randomUUID(),
-    date: document.getElementById('fieldDate').value,
-    time: document.getElementById('fieldTime').value,
+    date: entryDate,
+    time: entryTime,
     systolic,
     diastolic,
     pulse: pulseRaw ? Number(pulseRaw) : null,
@@ -336,6 +387,14 @@ form.addEventListener('submit', async (e) => {
 });
 
 cancelEditBtn.addEventListener('click', resetForm);
+
+document.getElementById('useNowTime').addEventListener('change', applyUseNowTime);
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  handleDayRollover();
+  if (document.getElementById('useNowTime').checked && !editIdInput.value) refreshNowFields();
+});
 
 document.getElementById('photoCaptureBtn').addEventListener('click', () => {
   document.getElementById('fieldPhotoInput').click();
@@ -370,7 +429,7 @@ function exportCsv(list) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `血壓紀錄_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `血壓紀錄_${localDateStr()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -389,8 +448,7 @@ document.getElementById('exportCsvBtn').addEventListener('click', () => {
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - 29);
-    const toStr = (d) => d.toISOString().slice(0, 10);
-    exportCsv(filterByRange(readings, { start: toStr(start), end: toStr(end) }));
+    exportCsv(filterByRange(readings, { start: localDateStr(start), end: localDateStr(end) }));
   } else if (type === 'custom') {
     const start = document.getElementById('exportStart').value;
     const end = document.getElementById('exportEnd').value;
@@ -442,7 +500,7 @@ document.getElementById('shareBtn').addEventListener('click', async () => {
   }
   const shareData = { title: '血壓記錄', text: buildEmailBody(readings) };
   try {
-    const file = new File([buildCsv(readings)], `血壓紀錄_${new Date().toISOString().slice(0, 10)}.csv`, { type: 'text/csv' });
+    const file = new File([buildCsv(readings)], `血壓紀錄_${localDateStr()}.csv`, { type: 'text/csv' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       shareData.files = [file];
     }
@@ -680,7 +738,7 @@ async function exportBackup() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `血壓備份_${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `血壓備份_${localDateStr()}.json`;
   a.click();
   URL.revokeObjectURL(url);
   showToast('已匯出備份檔');
@@ -1012,7 +1070,7 @@ window.addEventListener('resize', () => renderChart());
 const FIRED_SLOTS_KEY = 'bp_reminder_fired';
 
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateStr();
 }
 
 function loadFiredSlots() {
@@ -1131,6 +1189,11 @@ function handleDayRollover() {
 
 function checkAllReminders() {
   handleDayRollover();
+  // Keep the auto-time entry fields current so a form left open past midnight
+  // still shows today's date (submit also recomputes, so data is safe either way).
+  if (document.getElementById('useNowTime').checked && !editIdInput.value) {
+    refreshNowFields();
+  }
   checkMeasurementReminders();
   checkMedReminder();
 }
