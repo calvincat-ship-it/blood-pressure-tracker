@@ -1,3 +1,4 @@
+const APP_VERSION = 'v18';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -675,6 +676,9 @@ const historyModal = document.getElementById('historyModal');
 function openChart() {
   chartModal.hidden = false;
   renderChart();
+  // Re-render after layout settles: on first open the canvas can report a
+  // 0 width until the modal is laid out (seen on some mobile browsers).
+  requestAnimationFrame(renderChart);
 }
 function closeChart() { chartModal.hidden = true; }
 function openHistory() {
@@ -1441,9 +1445,30 @@ checkAllReminders();
 
 resetForm();
 renderAll();
+document.getElementById('appVersion').textContent = `版本 ${APP_VERSION}`;
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  // Reload once when a newly-installed service worker takes control, so a
+  // long-lived installed PWA actually picks up deployed updates instead of
+  // running stale cached code. Skip on the very first install (no prior
+  // controller) to avoid a needless reload.
+  const hadController = !!navigator.serviceWorker.controller;
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (refreshing || !hadController) return;
+    refreshing = true;
+    window.location.reload();
+  });
+
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    navigator.serviceWorker.register('sw.js').then((reg) => {
+      // Proactively check for a new version now and whenever the app returns to
+      // the foreground; without this a home-screen PWA that never closes can
+      // stay on an old version indefinitely.
+      reg.update().catch(() => {});
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update().catch(() => {});
+      });
+    }).catch(() => {});
   });
 }
