@@ -1,4 +1,4 @@
-const APP_VERSION = 'v18';
+const APP_VERSION = 'v19';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -484,8 +484,31 @@ document.getElementById('exportCsvBtn').addEventListener('click', () => {
 });
 
 // ---- Printable doctor report ----
+// Self-contained report shown in an on-screen overlay and printed via a
+// dedicated off-screen iframe, so printing never depends on hiding the app
+// with @media print (which unreliably printed the homepage on some devices).
 
-function buildReportHtml(list) {
+const REPORT_CSS = `
+.rp { color:#000; font-size:12px; line-height:1.4;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Noto Sans TC",sans-serif; }
+.rp h1 { font-size:18px; margin:0 0 6px; }
+.rp .rp-head { margin-bottom:10px; }
+.rp .rp-gen { color:#555; font-size:11px; margin:2px 0; }
+.rp table { width:100%; border-collapse:collapse; background:#fff; }
+.rp .rp-summary { margin-bottom:10px; }
+.rp .rp-summary th, .rp .rp-summary td { border:1px solid #999; padding:4px 6px; text-align:left; font-size:11px; }
+.rp .rp-summary th { background:#eee; width:22%; }
+.rp .rp-warn { color:#a8271f; font-weight:700; margin:4px 0 10px; }
+.rp .rp-chart { width:100%; max-width:680px; height:auto; margin-bottom:12px; border:1px solid #ccc; }
+.rp .rp-log th, .rp .rp-log td { border:1px solid #999; padding:3px 5px; font-size:10.5px; text-align:center; }
+.rp .rp-log th { background:#eee; }
+.rp .rp-log td:last-child { text-align:left; }
+.rp .rp-log tr { page-break-inside:avoid; }
+`;
+
+let currentReportInner = '';
+
+function buildReportInner(list) {
   const sorted = sortByDateTime(list);
   const s = computeStats(list);
   const span = `${sorted[0].date} ～ ${sorted[sorted.length - 1].date}`;
@@ -494,7 +517,7 @@ function buildReportHtml(list) {
   try {
     const cv = document.createElement('canvas');
     drawChart(cv, sorted.slice(-60), 680, 220);
-    chartImg = `<img class="report-chart" src="${cv.toDataURL('image/png')}" alt="血壓趨勢圖">`;
+    chartImg = `<img class="rp-chart" src="${cv.toDataURL('image/png')}" alt="血壓趨勢圖">`;
   } catch {}
 
   const catBits = Object.keys(CAT_LABELS)
@@ -506,52 +529,71 @@ function buildReportHtml(list) {
     const c = classify(r.systolic, r.diastolic);
     const lm = lastMedBeforeReading(r);
     const med = lm ? `服藥後 ${lm}` : '尚未用藥';
-    return `<tr>
-        <td>${r.date}</td><td>${r.time}</td>
-        <td>${r.systolic}/${r.diastolic}</td>
-        <td>${r.pulse ?? ''}</td>
-        <td>${c.label}</td>
-        <td>${med}</td>
-        <td>${escapeHtml(r.note || '')}</td>
-      </tr>`;
+    return `<tr><td>${r.date}</td><td>${r.time}</td><td>${r.systolic}/${r.diastolic}</td><td>${r.pulse ?? ''}</td><td>${c.label}</td><td>${med}</td><td>${escapeHtml(r.note || '')}</td></tr>`;
   }).join('');
 
-  return `
-    <div class="report-head">
-      <h1>血壓紀錄報告</h1>
-      <p>統計區間：${span}　共 ${s.count} 筆</p>
-      <p class="report-gen">產生時間：${new Date().toLocaleString('zh-TW')}</p>
-    </div>
-    <table class="report-summary">
-      <tr><th>平均血壓</th><td>${s.avgSys}/${s.avgDia} mmHg</td><th>達標率(&lt;130/80)</th><td>${s.atGoalPct}%</td></tr>
-      <tr><th>晨間平均</th><td>${s.morning ? `${s.morning.sys}/${s.morning.dia}` : '—'}</td><th>晚間平均</th><td>${s.evening ? `${s.evening.sys}/${s.evening.dia}` : '—'}</td></tr>
-      <tr><th>最高收縮壓</th><td>${s.max.sys}/${s.max.dia}（${s.max.date}）</td><th>最低收縮壓</th><td>${s.min.sys}/${s.min.dia}（${s.min.date}）</td></tr>
-      <tr><th>分級分布</th><td colspan="3">${catBits}</td></tr>
-    </table>
-    ${s.morningHigh ? '<p class="report-warn">⚠ 晨間平均血壓偏高（≥135/85），建議與醫師討論。</p>' : ''}
-    ${chartImg}
-    <table class="report-table">
-      <thead><tr><th>日期</th><th>時間</th><th>血壓</th><th>心跳</th><th>分級</th><th>服藥</th><th>備註</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-  `;
+  return `<style>${REPORT_CSS}</style><div class="rp">
+      <div class="rp-head">
+        <h1>血壓紀錄報告</h1>
+        <p>統計區間：${span}　共 ${s.count} 筆</p>
+        <p class="rp-gen">產生時間：${new Date().toLocaleString('zh-TW')}</p>
+      </div>
+      <table class="rp-summary">
+        <tr><th>平均血壓</th><td>${s.avgSys}/${s.avgDia} mmHg</td><th>達標率(&lt;130/80)</th><td>${s.atGoalPct}%</td></tr>
+        <tr><th>晨間平均</th><td>${s.morning ? `${s.morning.sys}/${s.morning.dia}` : '—'}</td><th>晚間平均</th><td>${s.evening ? `${s.evening.sys}/${s.evening.dia}` : '—'}</td></tr>
+        <tr><th>最高收縮壓</th><td>${s.max.sys}/${s.max.dia}（${s.max.date}）</td><th>最低收縮壓</th><td>${s.min.sys}/${s.min.dia}（${s.min.date}）</td></tr>
+        <tr><th>分級分布</th><td colspan="3">${catBits}</td></tr>
+      </table>
+      ${s.morningHigh ? '<p class="rp-warn">⚠ 晨間平均血壓偏高（≥135/85），建議與醫師討論。</p>' : ''}
+      ${chartImg}
+      <table class="rp-log">
+        <thead><tr><th>日期</th><th>時間</th><th>血壓</th><th>心跳</th><th>分級</th><th>服藥</th><th>備註</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 }
+
+const reportModal = document.getElementById('reportModal');
 
 function generateReport(list) {
   if (!list || list.length === 0) {
     showToast('此範圍沒有資料可產生報告');
     return;
   }
-  document.getElementById('printReport').innerHTML = buildReportHtml(list);
+  currentReportInner = buildReportInner(list);
+  document.getElementById('reportContent').innerHTML = currentReportInner;
   closeSettings();
-  document.body.classList.add('printing');
-  // Let the embedded (data-URL) chart image paint before opening the print view.
-  setTimeout(() => window.print(), 200);
+  reportModal.hidden = false;
 }
 
-window.addEventListener('afterprint', () => document.body.classList.remove('printing'));
+function printCurrentReport() {
+  if (!currentReportInner) return;
+  const old = document.getElementById('reportFrame');
+  if (old) old.remove();
+  const iframe = document.createElement('iframe');
+  iframe.id = 'reportFrame';
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;background:#fff;';
+  document.body.appendChild(iframe);
+  const doc = iframe.contentWindow.document;
+  doc.open();
+  doc.write(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>血壓報告</title><style>@page{margin:12mm}body{margin:0;padding:12px;background:#fff}</style></head><body>${currentReportInner}</body></html>`);
+  doc.close();
+  const win = iframe.contentWindow;
+  let done = false;
+  const go = () => {
+    if (done) return;
+    done = true;
+    try { win.focus(); win.print(); } catch {}
+  };
+  iframe.onload = () => setTimeout(go, 250);
+  setTimeout(go, 900); // fallback if onload doesn't fire
+}
 
 document.getElementById('reportBtn').addEventListener('click', () => generateReport(getExportRangeList()));
+document.getElementById('printReportBtn').addEventListener('click', printCurrentReport);
+document.getElementById('closeReportBtn').addEventListener('click', () => { reportModal.hidden = true; });
+reportModal.addEventListener('click', (e) => { if (e.target === reportModal) reportModal.hidden = true; });
 
 document.getElementById('chartFilterStart').addEventListener('change', (e) => {
   chartDateFilter.start = e.target.value;

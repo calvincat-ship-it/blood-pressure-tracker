@@ -553,35 +553,22 @@ input:disabled {
   padding: 10px 0;
 }
 
-/* ---- Printable doctor report ---- */
-.print-report { display: none; }
-
-#printReport { color: #000; font-size: 12px; }
-#printReport h1 { font-size: 18px; margin: 0 0 6px; }
-.report-head { margin-bottom: 10px; }
-.report-gen { color: #555; font-size: 11px; margin: 2px 0; }
-.report-summary { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-.report-summary th, .report-summary td {
-  border: 1px solid #999; padding: 4px 6px; text-align: left; font-size: 11px;
+/* ---- Doctor report overlay ---- */
+.report-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-.report-summary th { background: #eee; width: 22%; }
-.report-warn { color: #a8271f; font-weight: 700; margin: 4px 0 10px; }
-.report-chart {
-  width: 100%; max-width: 680px; height: auto;
-  margin-bottom: 12px; border: 1px solid #ccc;
+.report-header-actions .secondary-btn {
+  flex: none;
+  padding: 8px 12px;
+  font-size: 13px;
 }
-.report-table { width: 100%; border-collapse: collapse; }
-.report-table th, .report-table td {
-  border: 1px solid #999; padding: 3px 5px; font-size: 10.5px; text-align: center;
-}
-.report-table th { background: #eee; }
-.report-table td:last-child { text-align: left; }
-.report-table tr { page-break-inside: avoid; }
-
-@media print {
-  body.printing > * { display: none !important; }
-  body.printing > #printReport { display: block !important; }
-  @page { margin: 12mm; }
+.report-content {
+  background: #fff;
+  border-radius: 8px;
+  padding: 12px;
+  overflow-x: auto;
 }
 
 .badge-normal { background: var(--normal); }

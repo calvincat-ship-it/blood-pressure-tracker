@@ -318,7 +318,18 @@
   </div>
 </div>
 
-<div id="printReport" class="print-report"></div>
+<div id="reportModal" class="modal-backdrop" hidden>
+  <div class="modal-sheet report-sheet">
+    <div class="modal-header">
+      <h2>血壓報告</h2>
+      <div class="report-header-actions">
+        <button type="button" id="printReportBtn" class="secondary-btn">🖨 列印 / 存 PDF</button>
+        <button type="button" id="closeReportBtn" class="icon-btn" aria-label="關閉">✕</button>
+      </div>
+    </div>
+    <div id="reportContent" class="report-content"></div>
+  </div>
+</div>
 
 <script src="app.js"></script>
 </body>
