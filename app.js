@@ -108,6 +108,16 @@ function medTimesFor(date) {
   return (medLogs[date] || []).slice().sort();
 }
 
+// The most recent medication time taken at or before a reading's time on the
+// same day, or null if the reading was before that day's first dose.
+function lastMedBeforeReading(r) {
+  let last = null;
+  for (const t of medTimesFor(r.date)) {
+    if (t <= r.time) last = t; else break;
+  }
+  return last;
+}
+
 function loadSettings() {
   const defaults = {
     email: '', frequency: 'weekly', customDays: 14, autoClear: false, lastSentAt: null,
@@ -343,6 +353,13 @@ form.addEventListener('submit', async (e) => {
   const diastolic = Number(document.getElementById('fieldDiastolic').value);
   const pulseRaw = document.getElementById('fieldPulse').value;
 
+  // Basic plausibility check: systolic must be above diastolic (catches values
+  // entered in the wrong fields, e.g. 80/120).
+  if (systolic <= diastolic) {
+    showToast('收縮壓應大於舒張壓，請確認數值是否輸入正確');
+    return;
+  }
+
   let photoId = currentPhotoId;
   if (pendingPhotoRemoved && currentPhotoId) {
     await deletePhoto(currentPhotoId);
@@ -445,21 +462,95 @@ function toggleExportCustomRow() {
 
 exportRangeSelect.addEventListener('change', toggleExportCustomRow);
 
-document.getElementById('exportCsvBtn').addEventListener('click', () => {
+function getExportRangeList() {
   const type = exportRangeSelect.value;
   if (type === '30') {
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - 29);
-    exportCsv(filterByRange(readings, { start: localDateStr(start), end: localDateStr(end) }));
-  } else if (type === 'custom') {
+    return filterByRange(readings, { start: localDateStr(start), end: localDateStr(end) });
+  }
+  if (type === 'custom') {
     const start = document.getElementById('exportStart').value;
     const end = document.getElementById('exportEnd').value;
-    exportCsv(filterByRange(readings, { start, end }));
-  } else {
-    exportCsv(readings);
+    return filterByRange(readings, { start, end });
   }
+  return readings;
+}
+
+document.getElementById('exportCsvBtn').addEventListener('click', () => {
+  exportCsv(getExportRangeList());
 });
+
+// ---- Printable doctor report ----
+
+function buildReportHtml(list) {
+  const sorted = sortByDateTime(list);
+  const s = computeStats(list);
+  const span = `${sorted[0].date} ～ ${sorted[sorted.length - 1].date}`;
+
+  let chartImg = '';
+  try {
+    const cv = document.createElement('canvas');
+    drawChart(cv, sorted.slice(-60), 680, 220);
+    chartImg = `<img class="report-chart" src="${cv.toDataURL('image/png')}" alt="血壓趨勢圖">`;
+  } catch {}
+
+  const catBits = Object.keys(CAT_LABELS)
+    .filter(k => s.cats[k] > 0)
+    .map(k => `${CAT_LABELS[k]} ${s.cats[k]}`)
+    .join('、');
+
+  const rows = sorted.map(r => {
+    const c = classify(r.systolic, r.diastolic);
+    const lm = lastMedBeforeReading(r);
+    const med = lm ? `服藥後 ${lm}` : '尚未用藥';
+    return `<tr>
+        <td>${r.date}</td><td>${r.time}</td>
+        <td>${r.systolic}/${r.diastolic}</td>
+        <td>${r.pulse ?? ''}</td>
+        <td>${c.label}</td>
+        <td>${med}</td>
+        <td>${escapeHtml(r.note || '')}</td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <div class="report-head">
+      <h1>血壓紀錄報告</h1>
+      <p>統計區間：${span}　共 ${s.count} 筆</p>
+      <p class="report-gen">產生時間：${new Date().toLocaleString('zh-TW')}</p>
+    </div>
+    <table class="report-summary">
+      <tr><th>平均血壓</th><td>${s.avgSys}/${s.avgDia} mmHg</td><th>達標率(&lt;130/80)</th><td>${s.atGoalPct}%</td></tr>
+      <tr><th>晨間平均</th><td>${s.morning ? `${s.morning.sys}/${s.morning.dia}` : '—'}</td><th>晚間平均</th><td>${s.evening ? `${s.evening.sys}/${s.evening.dia}` : '—'}</td></tr>
+      <tr><th>最高收縮壓</th><td>${s.max.sys}/${s.max.dia}（${s.max.date}）</td><th>最低收縮壓</th><td>${s.min.sys}/${s.min.dia}（${s.min.date}）</td></tr>
+      <tr><th>分級分布</th><td colspan="3">${catBits}</td></tr>
+    </table>
+    ${s.morningHigh ? '<p class="report-warn">⚠ 晨間平均血壓偏高（≥135/85），建議與醫師討論。</p>' : ''}
+    ${chartImg}
+    <table class="report-table">
+      <thead><tr><th>日期</th><th>時間</th><th>血壓</th><th>心跳</th><th>分級</th><th>服藥</th><th>備註</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function generateReport(list) {
+  if (!list || list.length === 0) {
+    showToast('此範圍沒有資料可產生報告');
+    return;
+  }
+  document.getElementById('printReport').innerHTML = buildReportHtml(list);
+  closeSettings();
+  document.body.classList.add('printing');
+  // Let the embedded (data-URL) chart image paint before opening the print view.
+  setTimeout(() => window.print(), 200);
+}
+
+window.addEventListener('afterprint', () => document.body.classList.remove('printing'));
+
+document.getElementById('reportBtn').addEventListener('click', () => generateReport(getExportRangeList()));
 
 document.getElementById('chartFilterStart').addEventListener('change', (e) => {
   chartDateFilter.start = e.target.value;
@@ -947,11 +1038,7 @@ function renderHistory() {
     // Per-reading medication status: the most recent medication taken at or
     // before this reading's time on the same day. Readings before the day's
     // first dose lock to 尚未用藥 (red); later readings show that dose time.
-    const medTimes = medTimesFor(r.date); // sorted ascending
-    let lastMedBefore = null;
-    for (const t of medTimes) {
-      if (t <= r.time) lastMedBefore = t; else break;
-    }
+    const lastMedBefore = lastMedBeforeReading(r);
     const medBadge = lastMedBefore
       ? `<span class="med-inline med-inline-done">💊 服藥 ${lastMedBefore}</span>`
       : `<span class="med-inline med-inline-pending">尚未用藥</span>`;
@@ -980,19 +1067,26 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+function getChartData() {
+  const range = Number(chartRangeSelect.value);
+  return sortByDateTime(filterByRange(readings, chartDateFilter)).slice(-range);
+}
+
 function renderChart() {
   const canvas = document.getElementById('trendChart');
+  const data = getChartData();
+  renderStats(data);
+  const cssWidth = canvas.clientWidth || canvas.parentElement.clientWidth || 300;
+  drawChart(canvas, data, cssWidth, 180);
+}
+
+function drawChart(canvas, data, cssWidth, cssHeight) {
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
-  const cssWidth = canvas.clientWidth || canvas.parentElement.clientWidth;
-  const cssHeight = 180;
   canvas.width = cssWidth * dpr;
   canvas.height = cssHeight * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cssWidth, cssHeight);
-
-  const range = Number(chartRangeSelect.value);
-  const data = sortByDateTime(filterByRange(readings, chartDateFilter)).slice(-range);
 
   if (data.length === 0) {
     ctx.fillStyle = '#9aa8b0';
@@ -1061,6 +1155,61 @@ function renderChart() {
   }
 }
 
+function computeStats(list) {
+  if (list.length === 0) return null;
+  const avg = (arr) => Math.round(arr.reduce((s, v) => s + v, 0) / arr.length);
+  const morning = list.filter(r => r.time < '12:00');
+  const evening = list.filter(r => r.time >= '12:00');
+  const cats = { normal: 0, elevated: 0, stage1: 0, stage2: 0, crisis: 0 };
+  list.forEach(r => { cats[classify(r.systolic, r.diastolic).cls]++; });
+  const atGoal = list.filter(r => r.systolic < 130 && r.diastolic < 80).length;
+  const maxR = list.reduce((a, b) => (b.systolic > a.systolic ? b : a));
+  const minR = list.reduce((a, b) => (b.systolic < a.systolic ? b : a));
+  const period = (sub) => sub.length
+    ? { sys: avg(sub.map(r => r.systolic)), dia: avg(sub.map(r => r.diastolic)), n: sub.length }
+    : null;
+  const m = period(morning);
+  // Home-BP morning hypertension: morning average ≥135/85.
+  const morningHigh = !!m && (m.sys >= 135 || m.dia >= 85);
+  return {
+    count: list.length,
+    avgSys: avg(list.map(r => r.systolic)),
+    avgDia: avg(list.map(r => r.diastolic)),
+    morning: m,
+    evening: period(evening),
+    cats,
+    atGoalPct: Math.round((atGoal / list.length) * 100),
+    max: { sys: maxR.systolic, dia: maxR.diastolic, date: maxR.date },
+    min: { sys: minR.systolic, dia: minR.diastolic, date: minR.date },
+    morningHigh,
+  };
+}
+
+const CAT_LABELS = { normal: '正常', elevated: '偏高', stage1: '第一期', stage2: '第二期', crisis: '危象' };
+
+function renderStats(list) {
+  const box = document.getElementById('statsBox');
+  if (!box) return;
+  const s = computeStats(list);
+  if (!s) { box.innerHTML = '<p class="stats-empty">此範圍尚無資料</p>'; return; }
+  const catBits = Object.keys(CAT_LABELS)
+    .filter(k => s.cats[k] > 0)
+    .map(k => `<span class="stat-cat badge-${k}">${CAT_LABELS[k]} ${s.cats[k]}</span>`)
+    .join('');
+  box.innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-cell"><span class="stat-k">筆數</span><span class="stat-v">${s.count}</span></div>
+      <div class="stat-cell"><span class="stat-k">平均</span><span class="stat-v">${s.avgSys}/${s.avgDia}</span></div>
+      <div class="stat-cell"><span class="stat-k">達標率<br><small>&lt;130/80</small></span><span class="stat-v">${s.atGoalPct}%</span></div>
+      <div class="stat-cell"><span class="stat-k">晨間平均</span><span class="stat-v">${s.morning ? `${s.morning.sys}/${s.morning.dia}` : '—'}</span></div>
+      <div class="stat-cell"><span class="stat-k">晚間平均</span><span class="stat-v">${s.evening ? `${s.evening.sys}/${s.evening.dia}` : '—'}</span></div>
+      <div class="stat-cell"><span class="stat-k">最高 / 最低<br><small>收縮壓</small></span><span class="stat-v stat-v-sm">${s.max.sys} / ${s.min.sys}</span></div>
+    </div>
+    <div class="stat-cats">${catBits}</div>
+    ${s.morningHigh ? '<p class="stat-warn">⚠ 晨間平均血壓偏高（≥135/85），建議與醫師討論晨間血壓控制。</p>' : ''}
+  `;
+}
+
 function renderAll() {
   renderSummary();
   renderMedCard();
@@ -1103,15 +1252,28 @@ async function fireMeasurementReminder(t) {
   showToast(`⏰ ${body}`);
 }
 
+const REMINDER_CATCHUP_MINUTES = 120;
+
+function hhmmToMinutes(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+
 function checkMeasurementReminders() {
   if (!settings.reminderEnabled) return;
   const times = (settings.reminderTimes || []).filter(Boolean);
   if (times.length === 0) return;
-  const hhmm = new Date().toTimeString().slice(0, 5);
+  const nowMin = hhmmToMinutes(new Date().toTimeString().slice(0, 5));
   const fired = loadFiredSlots();
   let changed = false;
   times.forEach((t) => {
-    if (t === hhmm && !fired.times.includes(t)) {
+    if (fired.times.includes(t)) return;
+    const tMin = hhmmToMinutes(t);
+    // Fire once the scheduled time has arrived, catching up if the exact minute
+    // was missed (background throttling of setInterval, device asleep, or the
+    // app opened late) — but not for slots long past, to avoid a burst of stale
+    // reminders when the app is opened much later in the day.
+    if (nowMin >= tMin && nowMin - tMin <= REMINDER_CATCHUP_MINUTES) {
       fireMeasurementReminder(t);
       fired.times.push(t);
       changed = true;

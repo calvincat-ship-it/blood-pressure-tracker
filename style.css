@@ -177,6 +177,11 @@ main {
   background: #fff;
 }
 
+.chart-header .settings-section-title {
+  white-space: nowrap;
+  margin-right: 10px;
+}
+
 .text-danger-btn {
   background: none;
   border: none;
@@ -467,6 +472,103 @@ input:disabled {
   color: var(--crisis);
   border: 1px solid #f3c9c5;
   font-weight: 700;
+}
+
+.stats-title { margin-top: 14px; }
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.stat-cell {
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 8px 6px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  justify-content: center;
+}
+
+.stat-k {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.25;
+}
+.stat-k small { font-size: 9px; }
+
+.stat-v {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+.stat-v-sm { font-size: 15px; }
+
+.stat-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.stat-cat {
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.stat-warn {
+  margin: 10px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--crisis);
+  background: #fdecea;
+  border: 1px solid #f3c9c5;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.stats-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 10px 0;
+}
+
+/* ---- Printable doctor report ---- */
+.print-report { display: none; }
+
+#printReport { color: #000; font-size: 12px; }
+#printReport h1 { font-size: 18px; margin: 0 0 6px; }
+.report-head { margin-bottom: 10px; }
+.report-gen { color: #555; font-size: 11px; margin: 2px 0; }
+.report-summary { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+.report-summary th, .report-summary td {
+  border: 1px solid #999; padding: 4px 6px; text-align: left; font-size: 11px;
+}
+.report-summary th { background: #eee; width: 22%; }
+.report-warn { color: #a8271f; font-weight: 700; margin: 4px 0 10px; }
+.report-chart {
+  width: 100%; max-width: 680px; height: auto;
+  margin-bottom: 12px; border: 1px solid #ccc;
+}
+.report-table { width: 100%; border-collapse: collapse; }
+.report-table th, .report-table td {
+  border: 1px solid #999; padding: 3px 5px; font-size: 10.5px; text-align: center;
+}
+.report-table th { background: #eee; }
+.report-table td:last-child { text-align: left; }
+.report-table tr { page-break-inside: avoid; }
+
+@media print {
+  body.printing > * { display: none !important; }
+  body.printing > #printReport { display: block !important; }
+  @page { margin: 12mm; }
 }
 
 .badge-normal { background: var(--normal); }

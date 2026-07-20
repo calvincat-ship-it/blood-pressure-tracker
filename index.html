@@ -143,6 +143,8 @@
       <span><i class="dot diastolic"></i>舒張壓</span>
       <span><i class="dot pulse"></i>心跳</span>
     </div>
+    <h3 class="settings-section-title stats-title">統計摘要</h3>
+    <div id="statsBox" class="stats-box"></div>
   </div>
 </div>
 
@@ -285,7 +287,9 @@
       </div>
       <div class="form-actions">
         <button type="button" id="exportCsvBtn" class="secondary-btn">⬇ 匯出 CSV</button>
+        <button type="button" id="reportBtn" class="secondary-btn">🖨 產生報告</button>
       </div>
+      <p class="settings-meta">報告與 CSV 皆依上方「匯出範圍」;報告可直接列印或在列印畫面選「另存為 PDF」交給醫師。</p>
 
       <hr class="settings-divider">
 
@@ -310,6 +314,8 @@
     <img id="photoViewerImg" alt="血壓照片">
   </div>
 </div>
+
+<div id="printReport" class="print-report"></div>
 
 <script src="app.js"></script>
 </body>
