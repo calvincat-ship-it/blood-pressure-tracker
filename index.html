@@ -317,6 +317,30 @@
   </div>
 </div>
 
+<div id="reportInfoModal" class="modal-backdrop" hidden>
+  <div class="modal-sheet">
+    <div class="modal-header">
+      <h2>報告表頭資料</h2>
+      <button type="button" id="closeReportInfoBtn" class="icon-btn" aria-label="關閉">✕</button>
+    </div>
+    <p class="settings-meta">以下為<strong>選填</strong>，僅印在報告表頭供醫師辨識。不需要可直接選「略過不輸入」。</p>
+    <label class="full">姓名
+      <input type="text" id="reportName" maxlength="30" placeholder="選填">
+    </label>
+    <label class="full">身分證字號 / 病歷號
+      <input type="text" id="reportId" maxlength="30" placeholder="選填">
+    </label>
+    <label class="checkbox-row">
+      <input type="checkbox" id="rememberReportInfo">
+      記住這些資料，下次自動帶入（儲存在本機）
+    </label>
+    <div class="form-actions">
+      <button type="button" id="confirmReportInfoBtn" class="primary-btn">產生報告</button>
+      <button type="button" id="skipReportInfoBtn" class="secondary-btn">略過不輸入</button>
+    </div>
+  </div>
+</div>
+
 <div id="reportModal" class="modal-backdrop" hidden>
   <div class="modal-sheet report-sheet">
     <div class="modal-header">

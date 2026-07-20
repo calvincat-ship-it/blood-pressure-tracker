@@ -1,4 +1,4 @@
-const APP_VERSION = 'v20';
+const APP_VERSION = 'v21';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -131,6 +131,7 @@ function loadSettings() {
     reminderEnabled: false, reminderTimes: ['08:00', '13:00', '20:00'],
     highBpAlertEnabled: false, highBpAlertMode: 'auto', highBpCustomSystolic: 130, highBpCustomDiastolic: 80,
     medReminderEnabled: false, medReminderTime: '08:00', medReminderOverdueMin: 30, medReminderRepeatMin: 30,
+    reportName: '', reportId: '', rememberReportInfo: false,
   };
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY)) };
@@ -491,6 +492,7 @@ const REPORT_CSS = `
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Noto Sans TC",sans-serif; }
 .rp h1 { font-size:18px; margin:0 0 6px; }
 .rp .rp-head { margin-bottom:10px; }
+.rp .rp-id { font-size:13px; font-weight:700; margin:2px 0 4px; }
 .rp .rp-gen { color:#555; font-size:11px; margin:2px 0; }
 .rp table { width:100%; border-collapse:collapse; background:#fff; }
 .rp .rp-summary { margin-bottom:10px; }
@@ -506,10 +508,18 @@ const REPORT_CSS = `
 
 let currentReportInner = '';
 
-function buildReportInner(list) {
+function reportInfoLine(info) {
+  return [
+    info && info.name ? `姓名：${info.name}` : '',
+    info && info.id ? `身分證字號／病歷號：${info.id}` : '',
+  ].filter(Boolean).join('　');
+}
+
+function buildReportInner(list, info) {
   const sorted = sortByDateTime(list);
   const s = computeStats(list);
   const span = `${sorted[0].date} ～ ${sorted[sorted.length - 1].date}`;
+  const idLine = reportInfoLine(info);
 
   let chartImg = '';
   try {
@@ -531,6 +541,7 @@ function buildReportInner(list) {
   return `<style>${REPORT_CSS}</style><div class="rp">
       <div class="rp-head">
         <h1>血壓紀錄報告</h1>
+        ${idLine ? `<p class="rp-id">${escapeHtml(idLine)}</p>` : ''}
         <p>統計區間：${span}　共 ${s.count} 筆</p>
         <p class="rp-gen">產生時間：${new Date().toLocaleString('zh-TW')}</p>
       </div>
@@ -594,10 +605,11 @@ function drawCells(ctx, x, y, widths, cells, opts = {}) {
   return y + h;
 }
 
-function drawReportPages(list) {
+function drawReportPages(list, info) {
   const sorted = sortByDateTime(list);
   const s = computeStats(list);
   const contentW = PDF_PAGE_W - PDF_MARGIN * 2;
+  const idLine = reportInfoLine(info);
   const pages = [];
   let page = newReportPage();
   let ctx = page.ctx;
@@ -609,6 +621,12 @@ function drawReportPages(list) {
   ctx.font = pdfFont(34, 'bold');
   ctx.fillText('血壓紀錄報告', PDF_MARGIN, y + 20);
   y += 54;
+  if (idLine) {
+    ctx.font = pdfFont(21, 'bold');
+    ctx.fillStyle = '#000';
+    ctx.fillText(idLine, PDF_MARGIN, y + 10);
+    y += 34;
+  }
   ctx.font = pdfFont(19);
   ctx.fillStyle = '#333';
   ctx.fillText(`統計區間：${sorted[0].date} ～ ${sorted[sorted.length - 1].date}　共 ${s.count} 筆`, PDF_MARGIN, y + 10);
@@ -669,6 +687,12 @@ function drawReportPages(list) {
       ctx = page.ctx;
       pages.push(page.cv);
       y = PDF_MARGIN;
+      // Repeat an identifying line so separated pages stay attributable.
+      ctx.fillStyle = '#555';
+      ctx.textAlign = 'left';
+      ctx.font = pdfFont(16);
+      ctx.fillText(`血壓紀錄報告（續）${idLine ? '　' + idLine : ''}`, PDF_MARGIN, y + 8);
+      y += 30;
       drawLogHeader();
     }
     const c = classify(r.systolic, r.diastolic);
@@ -744,14 +768,66 @@ function canvasesToPdfBlob(canvases, quality = 0.85) {
 const reportModal = document.getElementById('reportModal');
 
 let currentReportList = [];
+let currentReportInfo = { name: '', id: '' };
+let pendingReportList = [];
 
-function generateReport(list) {
+const reportInfoModal = document.getElementById('reportInfoModal');
+
+// Optional identifying details are asked for right before the report is built,
+// so the user decides each time whether personal data goes into the PDF.
+function startReportFlow(list) {
+  if (!list || list.length === 0) {
+    showToast('此範圍沒有資料可產生報告');
+    return;
+  }
+  pendingReportList = list;
+  const remember = !!settings.rememberReportInfo;
+  document.getElementById('reportName').value = remember ? (settings.reportName || '') : '';
+  document.getElementById('reportId').value = remember ? (settings.reportId || '') : '';
+  document.getElementById('rememberReportInfo').checked = remember;
+  closeSettings();
+  reportInfoModal.hidden = false;
+}
+
+function finishReportFlow(info) {
+  reportInfoModal.hidden = true;
+  generateReport(pendingReportList, info);
+}
+
+function confirmReportInfo() {
+  const name = document.getElementById('reportName').value.trim();
+  const id = document.getElementById('reportId').value.trim();
+  const remember = document.getElementById('rememberReportInfo').checked;
+  settings.rememberReportInfo = remember;
+  settings.reportName = remember ? name : '';
+  settings.reportId = remember ? id : '';
+  saveSettings(settings);
+  finishReportFlow({ name, id });
+}
+
+function skipReportInfo() {
+  // Explicitly leave personal data out of this report.
+  if (!settings.rememberReportInfo) {
+    settings.reportName = '';
+    settings.reportId = '';
+    saveSettings(settings);
+  }
+  finishReportFlow({ name: '', id: '' });
+}
+
+document.getElementById('confirmReportInfoBtn').addEventListener('click', confirmReportInfo);
+document.getElementById('skipReportInfoBtn').addEventListener('click', skipReportInfo);
+document.getElementById('closeReportInfoBtn').addEventListener('click', () => { reportInfoModal.hidden = true; });
+reportInfoModal.addEventListener('click', (e) => { if (e.target === reportInfoModal) reportInfoModal.hidden = true; });
+
+function generateReport(list, info = { name: '', id: '' }) {
   if (!list || list.length === 0) {
     showToast('此範圍沒有資料可產生報告');
     return;
   }
   currentReportList = list;
-  currentReportInner = buildReportInner(list);
+  currentReportInfo = info;
+  currentReportInner = buildReportInner(list, info);
   document.getElementById('reportContent').innerHTML = currentReportInner;
   closeSettings();
   reminderDismissedThisSession = true;
@@ -760,8 +836,9 @@ function generateReport(list) {
 }
 
 function reportPdfFile() {
-  const blob = canvasesToPdfBlob(drawReportPages(currentReportList));
-  return new File([blob], `血壓報告_${localDateStr()}.pdf`, { type: 'application/pdf' });
+  const blob = canvasesToPdfBlob(drawReportPages(currentReportList, currentReportInfo));
+  const who = currentReportInfo.name ? `_${currentReportInfo.name}` : '';
+  return new File([blob], `血壓報告${who}_${localDateStr()}.pdf`, { type: 'application/pdf' });
 }
 
 // Records that a report was produced, so the periodic reminder resets.
@@ -860,7 +937,7 @@ function printCurrentReport() {
   setTimeout(go, 900); // fallback if onload doesn't fire
 }
 
-document.getElementById('reportBtn').addEventListener('click', () => generateReport(getExportRangeList()));
+document.getElementById('reportBtn').addEventListener('click', () => startReportFlow(getExportRangeList()));
 document.getElementById('shareReportBtn').addEventListener('click', shareReportPdf);
 document.getElementById('savePdfBtn').addEventListener('click', saveReportPdf);
 document.getElementById('printReportBtn').addEventListener('click', () => { printCurrentReport(); markReportDelivered(); });
@@ -1086,7 +1163,7 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
 });
 
 document.getElementById('sendNowBtn').addEventListener('click', () => {
-  generateReport(getExportRangeList());
+  startReportFlow(getExportRangeList());
 });
 
 // ---- Backup export / restore ----
@@ -1189,7 +1266,7 @@ function openReportFromReminder() {
     showToast('目前沒有紀錄可產生報告');
     return;
   }
-  generateReport(getExportRangeList());
+  startReportFlow(getExportRangeList());
 }
 
 document.getElementById('reminderSendBtn').addEventListener('click', openReportFromReminder);
