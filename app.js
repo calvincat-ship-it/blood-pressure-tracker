@@ -1,4 +1,4 @@
-const APP_VERSION = 'v19';
+const APP_VERSION = 'v20';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -119,6 +119,12 @@ function lastMedBeforeReading(r) {
   return last;
 }
 
+// Natural Chinese phrasing: 「08:00服藥」 rather than 「服藥後 08:00」.
+function medLabelFor(r) {
+  const t = lastMedBeforeReading(r);
+  return t ? `${t}服藥` : '尚未用藥';
+}
+
 function loadSettings() {
   const defaults = {
     email: '', frequency: 'weekly', customDays: 14, autoClear: false, lastSentAt: null,
@@ -145,8 +151,10 @@ function nextDueDate(s) {
   return d;
 }
 
+// Due purely on the schedule now — no Email address is required, since the
+// report can be shared, saved or printed however the user prefers.
 function isReminderDue(s, readingsList) {
-  if (!s.email || readingsList.length === 0) return false;
+  if (readingsList.length === 0) return false;
   if (!s.lastSentAt) return true;
   return new Date() >= nextDueDate(s);
 }
@@ -157,15 +165,6 @@ function buildCsv(list) {
     [r.date, r.time, r.systolic, r.diastolic, r.pulse ?? '', r.tag, `"${(r.note || '').replace(/"/g, '""')}"`].join(',')
   );
   return '﻿' + header + rows.join('\n');
-}
-
-function buildEmailBody(list) {
-  const sorted = sortByDateTime(list);
-  const lines = sorted.map(r => {
-    const c = classify(r.systolic, r.diastolic);
-    return `${r.date} ${r.time}  ${r.systolic}/${r.diastolic} mmHg${r.pulse ? `  心跳 ${r.pulse}` : ''}  [${c.label}]${r.tag ? `  ${r.tag}` : ''}${r.note ? `  備註:${r.note}` : ''}`;
-  });
-  return `血壓紀錄（共 ${sorted.length} 筆）\n\n${lines.join('\n')}`;
 }
 
 function classify(systolic, diastolic) {
@@ -223,7 +222,6 @@ let readings = loadReadings();
 let medLogs = loadMedLogs();
 let settings = loadSettings();
 let reminderDismissedThisSession = false;
-let pendingSendConfirmation = false;
 let chartDateFilter = { start: '', end: '' };
 let historyDateFilter = { start: '', end: '' };
 let pendingPhotoBlob = null;
@@ -527,9 +525,7 @@ function buildReportInner(list) {
 
   const rows = sorted.map(r => {
     const c = classify(r.systolic, r.diastolic);
-    const lm = lastMedBeforeReading(r);
-    const med = lm ? `服藥後 ${lm}` : '尚未用藥';
-    return `<tr><td>${r.date}</td><td>${r.time}</td><td>${r.systolic}/${r.diastolic}</td><td>${r.pulse ?? ''}</td><td>${c.label}</td><td>${med}</td><td>${escapeHtml(r.note || '')}</td></tr>`;
+    return `<tr><td>${r.date}</td><td>${r.time}</td><td>${r.systolic}/${r.diastolic}</td><td>${r.pulse ?? ''}</td><td>${c.label}</td><td>${medLabelFor(r)}</td><td>${escapeHtml(r.note || '')}</td></tr>`;
   }).join('');
 
   return `<style>${REPORT_CSS}</style><div class="rp">
@@ -553,17 +549,291 @@ function buildReportInner(list) {
     </div>`;
 }
 
+// ---- PDF generation: lay the report out on A4 canvases, embed each as a
+// JPEG in a hand-built minimal PDF. Keeps the app dependency-free, and
+// rasterising avoids having to embed a CJK font. ----
+
+const PDF_PAGE_W = 1240;  // A4 at ~150dpi
+const PDF_PAGE_H = 1754;
+const PDF_MARGIN = 60;
+const PDF_FONT = '"PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif';
+
+function pdfFont(size, weight = '') {
+  return `${weight} ${size}px ${PDF_FONT}`.trim();
+}
+
+function newReportPage() {
+  const cv = document.createElement('canvas');
+  cv.width = PDF_PAGE_W;
+  cv.height = PDF_PAGE_H;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, PDF_PAGE_W, PDF_PAGE_H);
+  ctx.textBaseline = 'middle';
+  return { cv, ctx };
+}
+
+function drawCells(ctx, x, y, widths, cells, opts = {}) {
+  const h = opts.height || 34;
+  let cx = x;
+  cells.forEach((cell, i) => {
+    const w = widths[i];
+    ctx.fillStyle = (opts.fills && opts.fills[i]) || opts.fill || '#fff';
+    ctx.fillRect(cx, y, w, h);
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(cx, y, w, h);
+    ctx.fillStyle = '#000';
+    ctx.font = pdfFont(opts.fontSize || 17, (opts.bolds && opts.bolds[i]) ? 'bold' : (opts.weight || ''));
+    const align = (opts.aligns && opts.aligns[i]) || 'center';
+    ctx.textAlign = align;
+    const tx = align === 'left' ? cx + 10 : (align === 'right' ? cx + w - 10 : cx + w / 2);
+    ctx.fillText(String(cell ?? ''), tx, y + h / 2, w - 16);
+    cx += w;
+  });
+  return y + h;
+}
+
+function drawReportPages(list) {
+  const sorted = sortByDateTime(list);
+  const s = computeStats(list);
+  const contentW = PDF_PAGE_W - PDF_MARGIN * 2;
+  const pages = [];
+  let page = newReportPage();
+  let ctx = page.ctx;
+  pages.push(page.cv);
+  let y = PDF_MARGIN;
+
+  ctx.fillStyle = '#000';
+  ctx.textAlign = 'left';
+  ctx.font = pdfFont(34, 'bold');
+  ctx.fillText('血壓紀錄報告', PDF_MARGIN, y + 20);
+  y += 54;
+  ctx.font = pdfFont(19);
+  ctx.fillStyle = '#333';
+  ctx.fillText(`統計區間：${sorted[0].date} ～ ${sorted[sorted.length - 1].date}　共 ${s.count} 筆`, PDF_MARGIN, y + 10);
+  y += 32;
+  ctx.font = pdfFont(16);
+  ctx.fillStyle = '#666';
+  ctx.fillText(`產生時間：${new Date().toLocaleString('zh-TW')}`, PDF_MARGIN, y + 10);
+  y += 38;
+
+  const sw = [contentW * 0.22, contentW * 0.28, contentW * 0.22, contentW * 0.28];
+  const headFill = ['#eee', '#fff', '#eee', '#fff'];
+  const headBold = [true, false, true, false];
+  const sumRows = [
+    ['平均血壓', `${s.avgSys}/${s.avgDia} mmHg`, '達標率(<130/80)', `${s.atGoalPct}%`],
+    ['晨間平均', s.morning ? `${s.morning.sys}/${s.morning.dia}` : '—', '晚間平均', s.evening ? `${s.evening.sys}/${s.evening.dia}` : '—'],
+    ['最高收縮壓', `${s.max.sys}/${s.max.dia}（${s.max.date}）`, '最低收縮壓', `${s.min.sys}/${s.min.dia}（${s.min.date}）`],
+  ];
+  sumRows.forEach(r => {
+    y = drawCells(ctx, PDF_MARGIN, y, sw, r, {
+      height: 38, fills: headFill, bolds: headBold,
+      aligns: ['left', 'left', 'left', 'left'],
+    });
+  });
+  const catBits = Object.keys(CAT_LABELS).filter(k => s.cats[k] > 0).map(k => `${CAT_LABELS[k]} ${s.cats[k]}`).join('、');
+  y = drawCells(ctx, PDF_MARGIN, y, [sw[0], contentW - sw[0]], ['分級分布', catBits], {
+    height: 38, fills: ['#eee', '#fff'], bolds: [true, false], aligns: ['left', 'left'],
+  });
+  y += 16;
+
+  if (s.morningHigh) {
+    ctx.fillStyle = '#a8271f';
+    ctx.font = pdfFont(18, 'bold');
+    ctx.textAlign = 'left';
+    ctx.fillText('⚠ 晨間平均血壓偏高（≥135/85），建議與醫師討論。', PDF_MARGIN, y + 10);
+    y += 34;
+  }
+
+  try {
+    const chartCv = document.createElement('canvas');
+    drawChart(chartCv, sorted.slice(-60), contentW, 340);
+    ctx.drawImage(chartCv, PDF_MARGIN, y, contentW, 340);
+    ctx.strokeStyle = '#ccc';
+    ctx.strokeRect(PDF_MARGIN, y, contentW, 340);
+    y += 360;
+  } catch {}
+
+  const cols = [0.15, 0.10, 0.14, 0.09, 0.17, 0.15, 0.20].map(f => contentW * f);
+  const headers = ['日期', '時間', '血壓', '心跳', '分級', '服藥', '備註'];
+  const aligns = ['center', 'center', 'center', 'center', 'center', 'center', 'left'];
+  const rowH = 34;
+  const drawLogHeader = () => {
+    y = drawCells(ctx, PDF_MARGIN, y, cols, headers, { height: rowH, fill: '#eee', weight: 'bold', fontSize: 16 });
+  };
+  drawLogHeader();
+  sorted.forEach(r => {
+    if (y + rowH > PDF_PAGE_H - PDF_MARGIN) {
+      page = newReportPage();
+      ctx = page.ctx;
+      pages.push(page.cv);
+      y = PDF_MARGIN;
+      drawLogHeader();
+    }
+    const c = classify(r.systolic, r.diastolic);
+    y = drawCells(ctx, PDF_MARGIN, y, cols, [
+      r.date, r.time, `${r.systolic}/${r.diastolic}`, r.pulse ?? '', c.label, medLabelFor(r), r.note || '',
+    ], { height: rowH, fontSize: 15, aligns });
+  });
+
+  return pages;
+}
+
+function canvasesToPdfBlob(canvases, quality = 0.85) {
+  const enc = (str) => {
+    const a = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) a[i] = str.charCodeAt(i) & 0xff;
+    return a;
+  };
+  const parts = [];
+  let offset = 0;
+  const push = (bytes) => { parts.push(bytes); offset += bytes.length; };
+  const pushStr = (s) => push(enc(s));
+
+  const N = canvases.length;
+  const objOffsets = [];
+  const PW = 595, PH = 842; // A4 in points
+
+  pushStr('%PDF-1.4\n');
+  objOffsets[1] = offset;
+  pushStr('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  const kids = [];
+  for (let i = 0; i < N; i++) kids.push(`${3 + i * 3} 0 R`);
+  objOffsets[2] = offset;
+  pushStr(`2 0 obj\n<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${N} >>\nendobj\n`);
+
+  for (let i = 0; i < N; i++) {
+    const pageNum = 3 + i * 3;
+    const contentNum = pageNum + 1;
+    const imgNum = pageNum + 2;
+
+    objOffsets[pageNum] = offset;
+    pushStr(`${pageNum} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PW} ${PH}] /Resources << /XObject << /Im0 ${imgNum} 0 R >> >> /Contents ${contentNum} 0 R >>\nendobj\n`);
+
+    const content = `q ${PW} 0 0 ${PH} 0 0 cm /Im0 Do Q\n`;
+    objOffsets[contentNum] = offset;
+    pushStr(`${contentNum} 0 obj\n<< /Length ${content.length} >>\nstream\n${content}endstream\nendobj\n`);
+
+    const dataUrl = canvases[i].toDataURL('image/jpeg', quality);
+    const bin = atob(dataUrl.slice(dataUrl.indexOf(',') + 1));
+    const img = new Uint8Array(bin.length);
+    for (let k = 0; k < bin.length; k++) img[k] = bin.charCodeAt(k);
+
+    objOffsets[imgNum] = offset;
+    pushStr(`${imgNum} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${canvases[i].width} /Height ${canvases[i].height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${img.length} >>\nstream\n`);
+    push(img);
+    pushStr('\nendstream\nendobj\n');
+  }
+
+  const totalObjs = 2 + N * 3;
+  const xrefOffset = offset;
+  let xref = `xref\n0 ${totalObjs + 1}\n0000000000 65535 f \n`;
+  for (let n = 1; n <= totalObjs; n++) {
+    xref += String(objOffsets[n]).padStart(10, '0') + ' 00000 n \n';
+  }
+  pushStr(xref);
+  pushStr(`trailer\n<< /Size ${totalObjs + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`);
+
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let o = 0;
+  parts.forEach(p => { out.set(p, o); o += p.length; });
+  return new Blob([out], { type: 'application/pdf' });
+}
+
 const reportModal = document.getElementById('reportModal');
+
+let currentReportList = [];
 
 function generateReport(list) {
   if (!list || list.length === 0) {
     showToast('此範圍沒有資料可產生報告');
     return;
   }
+  currentReportList = list;
   currentReportInner = buildReportInner(list);
   document.getElementById('reportContent').innerHTML = currentReportInner;
   closeSettings();
+  reminderDismissedThisSession = true;
+  renderReminder();
   reportModal.hidden = false;
+}
+
+function reportPdfFile() {
+  const blob = canvasesToPdfBlob(drawReportPages(currentReportList));
+  return new File([blob], `血壓報告_${localDateStr()}.pdf`, { type: 'application/pdf' });
+}
+
+// Records that a report was produced, so the periodic reminder resets.
+function markReportDelivered() {
+  settings.lastSentAt = new Date().toISOString();
+  saveSettings(settings);
+  renderSettingsMeta();
+  renderReminder();
+  if (settings.autoClear && readings.length > 0) {
+    if (confirm(`報告已產出。是否要依設定清除全部 ${readings.length} 筆舊紀錄？`)) {
+      const photoIds = readings.map(r => r.photoId).filter(Boolean);
+      readings = [];
+      saveReadings(readings);
+      resetForm();
+      renderAll();
+      deletePhotos(photoIds);
+      showToast('已清除舊紀錄');
+    }
+  }
+}
+
+function downloadPdf(file) {
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = file.name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// Share the PDF through the device's own share sheet — that is what exposes
+// Email, LINE and every other app the phone is set up to share with.
+async function shareReportPdf() {
+  if (!currentReportList.length) return;
+  let file;
+  try {
+    file = reportPdfFile();
+  } catch {
+    showToast('產生 PDF 失敗');
+    return;
+  }
+  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: '血壓紀錄報告' });
+      markReportDelivered();
+    } catch (err) {
+      if (err.name !== 'AbortError') showToast('分享失敗');
+    }
+    return;
+  }
+  // Desktop / unsupported: save the PDF and open a prefilled mail draft to attach.
+  downloadPdf(file);
+  markReportDelivered();
+  if (settings.email) {
+    const subject = `血壓紀錄報告 ${localDateStr()}`;
+    const body = `附上血壓紀錄報告（請將剛剛下載的 ${file.name} 附加到這封信）。`;
+    window.location.href = `mailto:${encodeURIComponent(settings.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    showToast('已下載 PDF，請在信件中附加檔案');
+  } else {
+    showToast('此裝置不支援直接分享，已儲存 PDF');
+  }
+}
+
+function saveReportPdf() {
+  if (!currentReportList.length) return;
+  try {
+    downloadPdf(reportPdfFile());
+    markReportDelivered();
+    showToast('已儲存 PDF');
+  } catch {
+    showToast('產生 PDF 失敗');
+  }
 }
 
 function printCurrentReport() {
@@ -591,7 +861,9 @@ function printCurrentReport() {
 }
 
 document.getElementById('reportBtn').addEventListener('click', () => generateReport(getExportRangeList()));
-document.getElementById('printReportBtn').addEventListener('click', printCurrentReport);
+document.getElementById('shareReportBtn').addEventListener('click', shareReportPdf);
+document.getElementById('savePdfBtn').addEventListener('click', saveReportPdf);
+document.getElementById('printReportBtn').addEventListener('click', () => { printCurrentReport(); markReportDelivered(); });
 document.getElementById('closeReportBtn').addEventListener('click', () => { reportModal.hidden = true; });
 reportModal.addEventListener('click', (e) => { if (e.target === reportModal) reportModal.hidden = true; });
 
@@ -628,31 +900,6 @@ document.getElementById('clearAllBtn').addEventListener('click', () => {
   renderAll();
   showToast('已清除所有紀錄');
   deletePhotos(photoIds);
-});
-
-document.getElementById('shareBtn').addEventListener('click', async () => {
-  if (readings.length === 0) {
-    showToast('目前沒有資料可分享');
-    return;
-  }
-  const shareData = { title: '血壓記錄', text: buildEmailBody(readings) };
-  try {
-    const file = new File([buildCsv(readings)], `血壓紀錄_${localDateStr()}.csv`, { type: 'text/csv' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      shareData.files = [file];
-    }
-  } catch {}
-
-  if (navigator.share) {
-    try {
-      await navigator.share(shareData);
-    } catch (err) {
-      if (err.name !== 'AbortError') showToast('分享失敗');
-    }
-  } else {
-    showToast('此瀏覽器不支援分享，改為下載 CSV');
-    exportCsv(readings);
-  }
 });
 
 // ---- Medication log ----
@@ -780,8 +1027,8 @@ function toggleHighBpCustomRow() {
 
 function renderSettingsMeta() {
   document.getElementById('lastSentInfo').textContent = settings.lastSentAt
-    ? `上次寄送：${new Date(settings.lastSentAt).toLocaleString('zh-TW')}`
-    : '尚未寄送過';
+    ? `上次產生報告：${new Date(settings.lastSentAt).toLocaleString('zh-TW')}`
+    : '尚未產生過報告';
 }
 
 document.getElementById('settingsBtn').addEventListener('click', openSettings);
@@ -839,8 +1086,7 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
 });
 
 document.getElementById('sendNowBtn').addEventListener('click', () => {
-  closeSettings();
-  sendReminderEmail();
+  generateReport(getExportRangeList());
 });
 
 // ---- Backup export / restore ----
@@ -936,49 +1182,17 @@ document.getElementById('importBackupInput').addEventListener('change', async (e
   await importBackupFile(file);
 });
 
-function sendReminderEmail() {
-  if (!settings.email) {
-    showToast('請先在設定中輸入 Email');
-    openSettings();
-    return;
-  }
+// The periodic reminder now produces the report (which is then shared, saved
+// or printed) instead of opening a text-only mailto.
+function openReportFromReminder() {
   if (readings.length === 0) {
-    showToast('目前沒有紀錄可寄送');
+    showToast('目前沒有紀錄可產生報告');
     return;
   }
-  const sorted = sortByDateTime(readings);
-  const subject = `血壓紀錄 ${fmtDate(sorted[0].date)} - ${fmtDate(sorted[sorted.length - 1].date)}`;
-  const body = buildEmailBody(readings);
-  const mailto = `mailto:${encodeURIComponent(settings.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  pendingSendConfirmation = true;
-  window.location.href = mailto;
+  generateReport(getExportRangeList());
 }
 
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible' || !pendingSendConfirmation) return;
-  pendingSendConfirmation = false;
-  setTimeout(() => {
-    if (!confirm('請問郵件是否已經寄出？')) {
-      renderReminder();
-      return;
-    }
-    settings.lastSentAt = new Date().toISOString();
-    saveSettings(settings);
-    if (settings.autoClear) {
-      const photoIds = readings.map(r => r.photoId).filter(Boolean);
-      readings = [];
-      saveReadings(readings);
-      deletePhotos(photoIds);
-      showToast('已寄送並清除舊紀錄');
-    } else {
-      showToast('已記錄寄送時間');
-    }
-    renderAll();
-    renderSettingsMeta();
-  }, 300);
-});
-
-document.getElementById('reminderSendBtn').addEventListener('click', sendReminderEmail);
+document.getElementById('reminderSendBtn').addEventListener('click', openReportFromReminder);
 
 document.getElementById('reminderLaterBtn').addEventListener('click', () => {
   reminderDismissedThisSession = true;
@@ -999,8 +1213,8 @@ function renderReminder() {
     return;
   }
   document.getElementById('reminderText').textContent = settings.lastSentAt
-    ? `距離上次寄送已經到了設定的週期，該把血壓紀錄寄給 ${settings.email} 了。`
-    : `已設定定期寄送到 ${settings.email}，要現在寄送第一次嗎？`;
+    ? '距離上次產生報告已達設定的週期，該產生一份新的血壓報告了。'
+    : '已啟用定期報告提醒，要現在產生第一份血壓報告嗎？';
   card.hidden = false;
 }
 
@@ -1086,7 +1300,7 @@ function renderHistory() {
     // first dose lock to 尚未用藥 (red); later readings show that dose time.
     const lastMedBefore = lastMedBeforeReading(r);
     const medBadge = lastMedBefore
-      ? `<span class="med-inline med-inline-done">💊 服藥 ${lastMedBefore}</span>`
+      ? `<span class="med-inline med-inline-done">💊 ${lastMedBefore}服藥</span>`
       : `<span class="med-inline med-inline-pending">尚未用藥</span>`;
     return `
       <div class="history-item" data-id="${r.id}">

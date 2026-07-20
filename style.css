@@ -554,16 +554,17 @@ input:disabled {
 }
 
 /* ---- Doctor report overlay ---- */
-.report-header-actions {
+.report-actions {
   display: flex;
-  align-items: center;
   gap: 8px;
+  margin-bottom: 6px;
 }
-.report-header-actions .secondary-btn {
-  flex: none;
-  padding: 8px 12px;
-  font-size: 13px;
+.report-actions .primary-btn,
+.report-actions .secondary-btn {
+  padding: 10px 8px;
+  font-size: 14px;
 }
+.report-hint { margin-bottom: 10px; }
 .report-content {
   background: #fff;
   border-radius: 8px;

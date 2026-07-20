@@ -27,7 +27,7 @@
   <section class="card reminder-card" id="reminderCard" hidden>
     <p id="reminderText"></p>
     <div class="reminder-actions">
-      <button type="button" id="reminderSendBtn" class="primary-btn">立即寄送</button>
+      <button type="button" id="reminderSendBtn" class="primary-btn">產生報告</button>
       <button type="button" id="reminderLaterBtn" class="secondary-btn">稍後提醒</button>
       <button type="button" id="reminderSkipBtn" class="text-danger-btn">略過本次</button>
     </div>
@@ -180,11 +180,9 @@
       <button type="button" id="closeSettingsBtn" class="icon-btn" aria-label="關閉">✕</button>
     </div>
     <form id="settingsForm">
-      <h3 class="settings-section-title">定期寄送 Email</h3>
-      <label class="full">收件 Email
-        <input type="email" id="settingEmail" placeholder="you@example.com">
-      </label>
-      <label class="full">寄送頻率
+      <h3 class="settings-section-title">定期報告提醒</h3>
+      <p class="settings-meta">依設定的週期提醒你產生血壓報告，產出後可分享（Email、LINE 等）、儲存或列印。</p>
+      <label class="full">提醒週期
         <select id="settingFrequency">
           <option value="weekly">每週</option>
           <option value="monthly">每月</option>
@@ -194,13 +192,17 @@
       <label class="full" id="customDaysRow" hidden>間隔天數
         <input type="number" id="settingCustomDays" min="1" max="365" value="14">
       </label>
+      <label class="full">預設收件 Email <span class="unit">選填</span>
+        <input type="email" id="settingEmail" placeholder="you@example.com">
+      </label>
+      <p class="settings-meta">僅在不支援分享選單的裝置（多為電腦）作為備援：會先下載 PDF，再開啟寄信視窗讓你附加檔案。</p>
       <label class="checkbox-row">
         <input type="checkbox" id="settingAutoClear">
-        傳送完成後自動清除舊紀錄
+        報告產出後詢問是否清除舊紀錄
       </label>
       <p class="settings-meta" id="lastSentInfo"></p>
       <div class="form-actions">
-        <button type="button" id="sendNowBtn" class="secondary-btn">立即寄送一次</button>
+        <button type="button" id="sendNowBtn" class="secondary-btn">立即產生報告</button>
       </div>
 
       <hr class="settings-divider">
@@ -268,11 +270,8 @@
 
       <hr class="settings-divider">
 
-      <h3 class="settings-section-title">分享與匯出</h3>
-      <div class="form-actions">
-        <button type="button" id="shareBtn" class="secondary-btn">📤 分享紀錄</button>
-      </div>
-      <label class="full">匯出範圍
+      <h3 class="settings-section-title">報告與匯出</h3>
+      <label class="full">報告 / 匯出範圍
         <select id="exportRange">
           <option value="all">全部</option>
           <option value="30">最近 30 天</option>
@@ -288,10 +287,10 @@
         </label>
       </div>
       <div class="form-actions">
+        <button type="button" id="reportBtn" class="primary-btn">📄 產生報告</button>
         <button type="button" id="exportCsvBtn" class="secondary-btn">⬇ 匯出 CSV</button>
-        <button type="button" id="reportBtn" class="secondary-btn">🖨 產生報告</button>
       </div>
-      <p class="settings-meta">報告與 CSV 皆依上方「匯出範圍」;報告可直接列印或在列印畫面選「另存為 PDF」交給醫師。</p>
+      <p class="settings-meta">皆依上方範圍。產生報告後可選擇分享（Email / LINE / 其他）、儲存 PDF 或列印。</p>
 
       <hr class="settings-divider">
 
@@ -322,11 +321,14 @@
   <div class="modal-sheet report-sheet">
     <div class="modal-header">
       <h2>血壓報告</h2>
-      <div class="report-header-actions">
-        <button type="button" id="printReportBtn" class="secondary-btn">🖨 列印 / 存 PDF</button>
-        <button type="button" id="closeReportBtn" class="icon-btn" aria-label="關閉">✕</button>
-      </div>
+      <button type="button" id="closeReportBtn" class="icon-btn" aria-label="關閉">✕</button>
     </div>
+    <div class="report-actions">
+      <button type="button" id="shareReportBtn" class="primary-btn">📤 分享 PDF</button>
+      <button type="button" id="savePdfBtn" class="secondary-btn">💾 儲存 PDF</button>
+      <button type="button" id="printReportBtn" class="secondary-btn">🖨 列印</button>
+    </div>
+    <p class="settings-meta report-hint">「分享 PDF」會開啟手機的分享選單，可選擇 Email、LINE 或其他已設定的分享方式。</p>
     <div id="reportContent" class="report-content"></div>
   </div>
 </div>
