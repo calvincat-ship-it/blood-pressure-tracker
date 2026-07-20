@@ -1124,6 +1124,62 @@ function drawChart(canvas, data, cssWidth, cssHeight) {
     ctx.fillText(Math.round(v).toString(), padding.left - 4, yy + 3);
   }
 
+  // target reference lines (goal < 130/80)
+  function drawTargetLine(v, color, label) {
+    if (v < minV || v > maxV) return;
+    const yy = y(v);
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.setLineDash([4, 3]);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padding.left, yy);
+    ctx.lineTo(cssWidth - padding.right, yy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = color;
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(label, cssWidth - padding.right, yy - 2);
+    ctx.restore();
+  }
+  drawTargetLine(130, 'rgba(217,83,79,0.55)', '目標 130');
+  drawTargetLine(80, 'rgba(47,102,144,0.55)', '目標 80');
+
+  // medication markers: interpolate each dose's x from its date+time position
+  const dts = data.map(r => new Date(`${r.date}T${r.time}`).getTime());
+  function xForDatetime(t) {
+    if (data.length === 1 || t <= dts[0]) return x(0);
+    if (t >= dts[dts.length - 1]) return x(dts.length - 1);
+    for (let j = 0; j < dts.length - 1; j++) {
+      if (t >= dts[j] && t <= dts[j + 1]) {
+        const span = (dts[j + 1] - dts[j]) || 1;
+        return x(j) + ((t - dts[j]) / span) * (x(j + 1) - x(j));
+      }
+    }
+    return x(dts.length - 1);
+  }
+  const firstDT = dts[0];
+  const lastDT = dts[dts.length - 1];
+  const medXs = [];
+  Object.entries(medLogs).forEach(([date, times]) => {
+    (times || []).forEach(t => {
+      const dt = new Date(`${date}T${t}`).getTime();
+      if (dt >= firstDT && dt <= lastDT) medXs.push(xForDatetime(dt));
+    });
+  });
+  // faint vertical guides behind the data lines
+  ctx.save();
+  ctx.strokeStyle = 'rgba(58,167,109,0.28)';
+  ctx.lineWidth = 1;
+  medXs.forEach(mx => {
+    ctx.beginPath();
+    ctx.moveTo(mx, padding.top);
+    ctx.lineTo(mx, padding.top + plotH);
+    ctx.stroke();
+  });
+  ctx.restore();
+
   function drawLine(key, color) {
     const pts = data.map((r, i) => ({ x: x(i), y: r[key] != null ? y(r[key]) : null })).filter(p => p.y != null);
     if (pts.length === 0) return;
@@ -1143,6 +1199,20 @@ function drawChart(canvas, data, cssWidth, cssHeight) {
   drawLine('diastolic', '#2f6690');
   drawLine('pulse', '#8a6dc9');
   drawLine('systolic', '#d9534f');
+
+  // medication triangle markers on the bottom axis (drawn on top)
+  ctx.save();
+  ctx.fillStyle = '#3aa76d';
+  const by = padding.top + plotH;
+  medXs.forEach(mx => {
+    ctx.beginPath();
+    ctx.moveTo(mx, by - 6);
+    ctx.lineTo(mx - 3.5, by);
+    ctx.lineTo(mx + 3.5, by);
+    ctx.closePath();
+    ctx.fill();
+  });
+  ctx.restore();
 
   // x-axis labels (first, middle, last)
   ctx.fillStyle = '#9aa8b0';

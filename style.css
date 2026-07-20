@@ -235,6 +235,19 @@ main {
 .dot.diastolic { background: #2f6690; }
 .dot.pulse { background: #8a6dc9; }
 
+.tri.med {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 8px solid #3aa76d;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.legend-target { color: var(--text-muted); }
+
 form { display: flex; flex-direction: column; gap: 8px; }
 
 .more-fields {
