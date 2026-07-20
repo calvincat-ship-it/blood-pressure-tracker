@@ -381,7 +381,10 @@ form.addEventListener('submit', async (e) => {
   resetForm();
   renderAll();
 
-  if (settings.highBpAlertEnabled && !priorSameDayHigh && meetsHighBpThreshold(entry, settings)) {
+  // Only prompt to take medication if none has been recorded for that day yet;
+  // once the user has logged today's dose the reminder is redundant.
+  const medTakenThatDay = medTimesFor(entry.date).length > 0;
+  if (settings.highBpAlertEnabled && !medTakenThatDay && !priorSameDayHigh && meetsHighBpThreshold(entry, settings)) {
     alert('目前您的血壓有過高的情況，請記得服藥以控制血壓');
   }
 });
