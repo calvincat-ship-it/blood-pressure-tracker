@@ -1,4 +1,4 @@
-const APP_VERSION = 'v21';
+const APP_VERSION = 'v22';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -132,6 +132,7 @@ function loadSettings() {
     highBpAlertEnabled: false, highBpAlertMode: 'auto', highBpCustomSystolic: 130, highBpCustomDiastolic: 80,
     medReminderEnabled: false, medReminderTime: '08:00', medReminderOverdueMin: 30, medReminderRepeatMin: 30,
     reportName: '', reportId: '', rememberReportInfo: false,
+    showManualOnOpen: false, manualSeenVersion: '',
   };
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY)) };
@@ -560,6 +561,123 @@ function buildReportInner(list, info) {
     </div>`;
 }
 
+// ---- User manual ----
+// Single source of truth for the manual: rendered both as the in-app view and
+// as the downloadable PDF. IMPORTANT: whenever a feature changes, update these
+// sections and bump APP_VERSION so users are shown the manual once.
+
+const MANUAL_SECTIONS = [
+  {
+    t: '一、首頁',
+    lines: [
+      '首頁固定顯示三張卡片，不需捲動即可看完。',
+      '「最近一次／近 7 天平均」：顯示最新一筆血壓與分級，以及近七天的平均值。',
+      '「新增血壓記錄」：輸入血壓的主要位置。',
+      '「用藥記錄」：一鍵記錄今天的服藥時間。',
+      '標題列右上三個圖示：📈 趨勢圖、📋 歷史紀錄、⚙ 設定。',
+    ],
+  },
+  {
+    t: '二、新增血壓記錄',
+    lines: [
+      '預設勾選「自動使用現在時間」，日期時間會鎖定為當下，送出時再次以當下時間計算，避免跨午夜存到舊日期。',
+      '取消勾選後，即可自行設定這筆記錄的日期與時間（補登過去的量測值時使用）。',
+      '必填：收縮壓、舒張壓；心跳為選填。',
+      '若收縮壓小於或等於舒張壓，系統會擋下並提示，避免數值填反。',
+      '「更多選項」可展開填寫時段（起床／睡前／飯後／運動後）、備註，以及拍攝照片。',
+    ],
+  },
+  {
+    t: '三、用藥記錄',
+    lines: [
+      '按「💊 記錄現在服藥」並確認後，即記下當下的服藥時間（需確認以避免誤觸）。',
+      '已記錄的時間會以膠囊顯示，點 ✕ 並確認後可刪除。',
+      '畫面每日 00:00 自動重置為「今日尚未記錄服藥」。',
+      '歷史各天的服藥時間會完整保留，供醫師參考，不會被清除。',
+    ],
+  },
+  {
+    t: '四、趨勢圖與統計摘要',
+    lines: [
+      '由標題列 📈 開啟。可選顯示筆數，或以起訖日期篩選。',
+      '圖上三條線分別為收縮壓、舒張壓、心跳。',
+      '虛線為目標線（收縮壓 130、舒張壓 80），用來判斷是否達標。',
+      '綠色 ▲ 標記為服藥時間點，可對照服藥前後的血壓變化。',
+      '統計摘要包含：筆數、平均、達標率（<130/80）、晨間與晚間平均、最高與最低收縮壓、各分級分布。',
+      '若晨間平均達 135/85 以上，會顯示晨間高血壓提醒。',
+    ],
+  },
+  {
+    t: '五、歷史紀錄',
+    lines: [
+      '由標題列 📋 開啟，可用起訖日期篩選。',
+      '每筆顯示日期時間、血壓、心跳、分級，以及服藥狀態。',
+      '服藥狀態：該筆記錄在當天首次服藥之前顯示紅字「尚未用藥」；在服藥之後則顯示該筆記錄前最近一次的服藥時間，例如「08:00服藥」。',
+      '✎ 編輯：會關閉歷史視窗並帶入表單修改；🗑 刪除、🖼 檢視照片。',
+      '「清除全部」會先確認並顯示筆數，此動作無法復原。',
+    ],
+  },
+  {
+    t: '六、提醒功能',
+    lines: [
+      '量測提醒：每天最多三個時間點。時間到就提醒；若因手機休眠或未開啟 App 而錯過，會在兩小時內補提醒一次。',
+      '每日用藥提醒：設定用藥時間、逾時幾分鐘開始提醒、以及提醒間隔。一旦按下「記錄現在服藥」即自動停止，隔天重新判斷。',
+      '高血壓服藥提醒：當日第一次出現偏高血壓時提醒服藥；若當天已記錄用藥則不再提醒。',
+      '定期報告提醒：依設定週期提醒您產生血壓報告。',
+      '重要：本 App 無伺服器，提醒需要頁面保持開啟（可切到背景分頁）。App 完全關閉時無法送出通知。',
+    ],
+  },
+  {
+    t: '七、血壓報告（給醫師）',
+    lines: [
+      '於設定中選擇範圍後按「📄 產生報告」。',
+      '產生前會詢問是否填寫姓名與身分證字號／病歷號，兩者皆為選填，可直接選「略過不輸入」。',
+      '勾選「記住這些資料」才會存在本機；未勾選則僅用於該次報告，不會保存。',
+      '報告內容包含統計摘要、趨勢圖，以及完整記錄表（含每筆的服藥狀態）。',
+      '產生後可選擇：📤 分享 PDF（開啟手機分享選單，可選 Email、LINE 等）、💾 儲存 PDF、🖨 列印。',
+    ],
+  },
+  {
+    t: '八、匯出與備份',
+    lines: [
+      '匯出 CSV：依所選範圍輸出試算表格式，方便自行分析。',
+      '備份：將所有紀錄、設定與照片打包成一個備份檔。',
+      '還原：匯入備份檔會「完全覆蓋」目前資料，執行前會先確認。',
+      '更換手機或瀏覽器前，請務必先匯出備份檔。',
+    ],
+  },
+  {
+    t: '九、資料與版本說明',
+    lines: [
+      '所有資料只存在您自己的手機（localStorage 與 IndexedDB），沒有帳號，也不會上傳到任何伺服器。',
+      '清除瀏覽器資料會一併刪除紀錄，請定期備份。',
+      '設定頁最下方會顯示目前版本，可確認是否已更新到最新版。',
+      '版本更新後，本使用說明會自動顯示一次；之後是否顯示，依您在設定中的勾選為準。',
+    ],
+  },
+];
+
+const MANUAL_CSS = `
+.mn { color:#000; font-size:13px; line-height:1.65;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Noto Sans TC",sans-serif; }
+.mn h1 { font-size:19px; margin:0 0 4px; }
+.mn .mn-sub { color:#555; font-size:12px; margin:0 0 12px; }
+.mn h2 { font-size:15px; margin:14px 0 6px; padding-bottom:3px; border-bottom:1px solid #ccc; }
+.mn ul { margin:0; padding-left:18px; }
+.mn li { margin:3px 0; }
+`;
+
+function buildManualHtml() {
+  const body = MANUAL_SECTIONS.map(sec =>
+    `<h2>${escapeHtml(sec.t)}</h2><ul>${sec.lines.map(l => `<li>${escapeHtml(l)}</li>`).join('')}</ul>`
+  ).join('');
+  return `<style>${MANUAL_CSS}</style><div class="mn">
+      <h1>血壓記錄 App 使用說明</h1>
+      <p class="mn-sub">適用版本：${APP_VERSION}　說明產生日期：${localDateStr()}</p>
+      ${body}
+    </div>`;
+}
+
 // ---- PDF generation: lay the report out on A4 canvases, embed each as a
 // JPEG in a hand-built minimal PDF. Keeps the app dependency-free, and
 // rasterising avoids having to embed a CJK font. ----
@@ -770,6 +888,183 @@ const reportModal = document.getElementById('reportModal');
 let currentReportList = [];
 let currentReportInfo = { name: '', id: '' };
 let pendingReportList = [];
+
+// Character-by-character wrapping — CJK text has no spaces to break on.
+function wrapLines(ctx, text, maxWidth) {
+  const out = [];
+  let cur = '';
+  for (const ch of text) {
+    const test = cur + ch;
+    if (ctx.measureText(test).width > maxWidth && cur) {
+      out.push(cur);
+      cur = ch;
+    } else {
+      cur = test;
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+function drawManualPages() {
+  const contentW = PDF_PAGE_W - PDF_MARGIN * 2;
+  const pages = [];
+  let page = newReportPage();
+  let ctx = page.ctx;
+  pages.push(page.cv);
+  let y = PDF_MARGIN;
+
+  const newPage = () => {
+    page = newReportPage();
+    ctx = page.ctx;
+    pages.push(page.cv);
+    y = PDF_MARGIN;
+  };
+  const room = (need) => {
+    if (y + need > PDF_PAGE_H - PDF_MARGIN) newPage();
+  };
+
+  ctx.fillStyle = '#000';
+  ctx.textAlign = 'left';
+  ctx.font = pdfFont(36, 'bold');
+  ctx.fillText('血壓記錄 App 使用說明', PDF_MARGIN, y + 22);
+  y += 58;
+  ctx.font = pdfFont(19);
+  ctx.fillStyle = '#555';
+  ctx.fillText(`適用版本：${APP_VERSION}　說明產生日期：${localDateStr()}`, PDF_MARGIN, y + 10);
+  y += 44;
+
+  MANUAL_SECTIONS.forEach(sec => {
+    room(90);
+    ctx.fillStyle = '#000';
+    ctx.font = pdfFont(24, 'bold');
+    ctx.textAlign = 'left';
+    ctx.fillText(sec.t, PDF_MARGIN, y + 14);
+    y += 30;
+    ctx.strokeStyle = '#bbb';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(PDF_MARGIN, y);
+    ctx.lineTo(PDF_PAGE_W - PDF_MARGIN, y);
+    ctx.stroke();
+    y += 16;
+
+    sec.lines.forEach(line => {
+      ctx.font = pdfFont(19);
+      ctx.fillStyle = '#000';
+      const wrapped = wrapLines(ctx, line, contentW - 26);
+      wrapped.forEach((seg, i) => {
+        room(32);
+        ctx.font = pdfFont(19);
+        ctx.fillStyle = '#000';
+        ctx.textAlign = 'left';
+        if (i === 0) ctx.fillText('・', PDF_MARGIN, y + 12);
+        ctx.fillText(seg, PDF_MARGIN + 26, y + 12);
+        y += 30;
+      });
+      y += 4;
+    });
+    y += 12;
+  });
+
+  return pages;
+}
+
+function manualPdfFile() {
+  const blob = canvasesToPdfBlob(drawManualPages());
+  return new File([blob], `血壓記錄App使用說明_${APP_VERSION}.pdf`, { type: 'application/pdf' });
+}
+
+const manualModal = document.getElementById('manualModal');
+let manualForcedShown = false;
+
+function openManual(forced = false) {
+  document.getElementById('manualContent').innerHTML = buildManualHtml();
+  document.getElementById('manualUpdateNote').hidden = !forced;
+  document.getElementById('manualOnOpenInline').checked = !!settings.showManualOnOpen;
+  manualForcedShown = forced;
+  closeSettings();
+  manualModal.hidden = false;
+}
+
+// Mark the version as seen only once the user actually closes the forced view.
+// Recording it at open time would lose the forced showing if the page reloads
+// first (e.g. the service worker updating and refreshing the app).
+function closeManual() {
+  manualModal.hidden = true;
+  if (manualForcedShown) {
+    manualForcedShown = false;
+    settings.manualSeenVersion = APP_VERSION;
+    saveSettings(settings);
+  }
+}
+
+function printManual() {
+  const old = document.getElementById('manualFrame');
+  if (old) old.remove();
+  const iframe = document.createElement('iframe');
+  iframe.id = 'manualFrame';
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;background:#fff;';
+  document.body.appendChild(iframe);
+  const doc = iframe.contentWindow.document;
+  doc.open();
+  doc.write(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>使用說明</title><style>@page{margin:14mm}body{margin:0;padding:14px;background:#fff}</style></head><body>${buildManualHtml()}</body></html>`);
+  doc.close();
+  const win = iframe.contentWindow;
+  let done = false;
+  const go = () => { if (done) return; done = true; try { win.focus(); win.print(); } catch {} };
+  iframe.onload = () => setTimeout(go, 200);
+  setTimeout(go, 800);
+}
+
+async function shareManualPdf() {
+  let file;
+  try { file = manualPdfFile(); } catch { showToast('產生 PDF 失敗'); return; }
+  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: '血壓記錄 App 使用說明' }); }
+    catch (err) { if (err.name !== 'AbortError') showToast('分享失敗'); }
+    return;
+  }
+  downloadPdf(file);
+  showToast('此裝置不支援直接分享，已儲存 PDF');
+}
+
+function saveManualPdf() {
+  try {
+    downloadPdf(manualPdfFile());
+    showToast('已儲存使用說明 PDF');
+  } catch {
+    showToast('產生 PDF 失敗');
+  }
+}
+
+function setManualOnOpen(on) {
+  settings.showManualOnOpen = on;
+  saveSettings(settings);
+  const s = document.getElementById('settingManualOnOpen');
+  if (s) s.checked = on;
+  const i = document.getElementById('manualOnOpenInline');
+  if (i) i.checked = on;
+}
+
+document.getElementById('openManualBtn').addEventListener('click', () => openManual(false));
+document.getElementById('closeManualBtn').addEventListener('click', closeManual);
+manualModal.addEventListener('click', (e) => { if (e.target === manualModal) closeManual(); });
+document.getElementById('shareManualBtn').addEventListener('click', shareManualPdf);
+document.getElementById('saveManualBtn').addEventListener('click', saveManualPdf);
+document.getElementById('printManualBtn').addEventListener('click', printManual);
+document.getElementById('manualOnOpenInline').addEventListener('change', (e) => setManualOnOpen(e.target.checked));
+
+// Force the manual once after a version update, then fall back to the user's
+// own preference on later launches.
+function maybeShowManualOnStart() {
+  if (settings.manualSeenVersion !== APP_VERSION) {
+    openManual(true);   // closeManual() records the version once it is dismissed
+    return;
+  }
+  if (settings.showManualOnOpen) openManual(false);
+}
 
 const reportInfoModal = document.getElementById('reportInfoModal');
 
@@ -1083,6 +1378,7 @@ function openSettings() {
   document.getElementById('settingMedReminderTime').value = settings.medReminderTime;
   document.getElementById('settingMedReminderOverdue').value = settings.medReminderOverdueMin;
   document.getElementById('settingMedReminderRepeat').value = settings.medReminderRepeatMin;
+  document.getElementById('settingManualOnOpen').checked = !!settings.showManualOnOpen;
   toggleCustomDaysRow();
   toggleHighBpCustomRow();
   toggleExportCustomRow();
@@ -1155,6 +1451,7 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
   settings.medReminderTime = document.getElementById('settingMedReminderTime').value || '08:00';
   settings.medReminderOverdueMin = Math.max(0, Number(document.getElementById('settingMedReminderOverdue').value) || 0);
   settings.medReminderRepeatMin = Math.max(5, Number(document.getElementById('settingMedReminderRepeat').value) || 30);
+  settings.showManualOnOpen = document.getElementById('settingManualOnOpen').checked;
 
   saveSettings(settings);
   closeSettings();
@@ -1779,6 +2076,7 @@ checkAllReminders();
 resetForm();
 renderAll();
 document.getElementById('appVersion').textContent = `版本 ${APP_VERSION}`;
+maybeShowManualOnStart();
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   // Reload once when a newly-installed service worker takes control, so a

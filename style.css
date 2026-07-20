@@ -565,6 +565,19 @@ input:disabled {
   font-size: 14px;
 }
 .report-hint { margin-bottom: 10px; }
+
+.manual-note {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary-dark);
+  background: #eaf1f6;
+  border: 1px solid #cfe0ec;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.manual-optin { margin-bottom: 10px; }
 .report-content {
   background: #fff;
   border-radius: 8px;

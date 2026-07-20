@@ -294,6 +294,18 @@
 
       <hr class="settings-divider">
 
+      <h3 class="settings-section-title">使用說明</h3>
+      <div class="form-actions">
+        <button type="button" id="openManualBtn" class="secondary-btn">📖 開啟使用說明</button>
+      </div>
+      <label class="checkbox-row">
+        <input type="checkbox" id="settingManualOnOpen">
+        每次開啟 App 時主動顯示使用說明
+      </label>
+      <p class="settings-meta">版本更新後會自動顯示一次使用說明，之後依上方勾選為準。說明內含各功能操作方式，並可儲存或分享 PDF。</p>
+
+      <hr class="settings-divider">
+
       <h3 class="settings-section-title">資料備份</h3>
       <p class="settings-meta">將所有紀錄、設定與照片打包成一個備份檔，可在更換手機或瀏覽器時用來還原資料。</p>
       <div class="form-actions">
@@ -314,6 +326,26 @@
   <div class="photo-viewer-inner">
     <button type="button" id="closePhotoViewerBtn" class="icon-btn" aria-label="關閉">✕</button>
     <img id="photoViewerImg" alt="血壓照片">
+  </div>
+</div>
+
+<div id="manualModal" class="modal-backdrop" hidden>
+  <div class="modal-sheet">
+    <div class="modal-header">
+      <h2>使用說明</h2>
+      <button type="button" id="closeManualBtn" class="icon-btn" aria-label="關閉">✕</button>
+    </div>
+    <p id="manualUpdateNote" class="manual-note" hidden>本次版本已更新，自動為您顯示一次使用說明。</p>
+    <div class="report-actions">
+      <button type="button" id="shareManualBtn" class="secondary-btn">📤 分享 PDF</button>
+      <button type="button" id="saveManualBtn" class="secondary-btn">💾 儲存 PDF</button>
+      <button type="button" id="printManualBtn" class="secondary-btn">🖨 列印</button>
+    </div>
+    <label class="checkbox-row manual-optin">
+      <input type="checkbox" id="manualOnOpenInline">
+      每次開啟 App 時主動顯示使用說明
+    </label>
+    <div id="manualContent" class="report-content"></div>
   </div>
 </div>
 
