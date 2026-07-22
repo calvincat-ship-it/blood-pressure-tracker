@@ -307,8 +307,28 @@
 
       <hr class="settings-divider">
 
-      <h3 class="settings-section-title">資料備份</h3>
-      <p class="settings-meta">將所有紀錄、設定與照片打包成一個備份檔，可在更換手機或瀏覽器時用來還原資料。</p>
+      <h3 class="settings-section-title">☁️ 雲端備份（Google Drive）</h3>
+      <p class="settings-meta">用 Google 帳號登入後，會自動把所有紀錄、用藥與設定備份到你自己 Google 雲端硬碟的 App 專屬空間；換手機或另一台裝置登入即可還原。資料只存在你的 Google 帳號，不會經過任何伺服器。</p>
+      <div id="cloudDisconnectedBox">
+        <div class="form-actions">
+          <button type="button" id="cloudConnectBtn" class="primary-btn">🔗 連結 Google 雲端備份</button>
+        </div>
+      </div>
+      <div id="cloudConnectedBox" hidden>
+        <p class="settings-meta cloud-status" id="cloudStatus"></p>
+        <div class="form-actions">
+          <button type="button" id="cloudBackupNowBtn" class="secondary-btn">⬆ 立即備份</button>
+          <button type="button" id="cloudRestoreBtn" class="secondary-btn">⬇ 從雲端還原</button>
+        </div>
+        <div class="form-actions cloud-disconnect-row">
+          <button type="button" id="cloudDisconnectBtn" class="text-danger-btn">解除連結</button>
+        </div>
+      </div>
+
+      <hr class="settings-divider">
+
+      <h3 class="settings-section-title">資料備份（本機檔案）</h3>
+      <p class="settings-meta">將所有紀錄、設定與照片打包成一個備份檔存到手機，可離線保存或自行轉存。</p>
       <div class="form-actions">
         <button type="button" id="exportBackupBtn" class="secondary-btn">匯出備份檔</button>
         <button type="button" id="importBackupBtn" class="secondary-btn">匯入備份檔還原</button>

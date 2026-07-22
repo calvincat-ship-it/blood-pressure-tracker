@@ -810,6 +810,19 @@ input:disabled {
   opacity: 0.7;
 }
 
+.cloud-status {
+  font-weight: 600;
+  color: var(--primary-dark);
+  background: var(--primary-soft);
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--card-bg));
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.cloud-disconnect-row {
+  justify-content: flex-end;
+}
+
 .settings-section-title {
   font-size: 14px;
   color: var(--primary-dark);

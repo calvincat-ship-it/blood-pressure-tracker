@@ -1,8 +1,18 @@
-const APP_VERSION = 'v23';
+const APP_VERSION = 'v24';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
 const PHOTO_STORE = 'photos';
+
+// Cloud backup constants — declared at the top because loadCloudState() (called
+// with the other top-level state below) reads CLOUD_KEY; a const referenced
+// before its declaration line executes throws a TDZ ReferenceError.
+const GOOGLE_CLIENT_ID = '682239566772-fjhc69ef2dgup26hmrtiqj8eefuq1fu9.apps.googleusercontent.com';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+const CLOUD_KEY = 'bp_cloud_v1';
+const CLOUD_FILE_NAME = 'bp-backup.json';
+const CLOUD_PREV_NAME = 'bp-backup.prev.json';
+const CLOUD_DEBOUNCE_MS = 8000;
 
 /** @typedef {{id:string,date:string,time:string,systolic:number,diastolic:number,pulse:number|null,tag:string,note:string,photoId:string|null}} Reading */
 
@@ -88,6 +98,7 @@ function loadReadings() {
 
 function saveReadings(readings) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(readings));
+  scheduleCloudBackup();
 }
 
 const MED_KEY = 'bp_med_logs_v1';
@@ -103,6 +114,7 @@ function loadMedLogs() {
 
 function saveMedLogs(m) {
   localStorage.setItem(MED_KEY, JSON.stringify(m));
+  scheduleCloudBackup();
 }
 
 function medTimesFor(date) {
@@ -223,6 +235,8 @@ const chartRangeSelect = document.getElementById('chartRange');
 let readings = loadReadings();
 let medLogs = loadMedLogs();
 let settings = loadSettings();
+let cloudState = loadCloudState();
+let suppressCloud = false; // set while applying a restore, to avoid a re-upload loop
 let reminderDismissedThisSession = false;
 let chartDateFilter = { start: '', end: '' };
 let historyDateFilter = { start: '', end: '' };
@@ -641,9 +655,12 @@ const MANUAL_SECTIONS = [
     t: '八、匯出與備份',
     lines: [
       '匯出 CSV：依所選範圍輸出試算表格式，方便自行分析。',
-      '備份：將所有紀錄、設定與照片打包成一個備份檔。',
-      '還原：匯入備份檔會「完全覆蓋」目前資料，執行前會先確認。',
-      '更換手機或瀏覽器前，請務必先匯出備份檔。',
+      '雲端備份（Google Drive）：在設定中按「連結 Google 雲端備份」並用 Google 帳號登入後，App 會自動把所有紀錄、用藥與設定備份到你自己 Google 雲端硬碟的 App 專屬隱藏空間。',
+      '雲端備份的資料只存在你自己的 Google 帳號，不會經過任何伺服器，開發者也看不到。',
+      '連結後每次變動都會自動備份；也可按「立即備份」或「從雲端還原」。換手機時，在新手機登入同一個 Google 帳號即可從雲端還原。',
+      '多台裝置：開啟 App 時若偵測到雲端有較新的備份，會詢問是否還原到本機（採最後儲存者優先，並保留前一版以防萬一）。',
+      '本機備份檔：也可將所有紀錄、設定與照片匯出成一個檔案離線保存；匯入還原會「完全覆蓋」目前資料，執行前會先確認。',
+      '更換手機或瀏覽器前，請先完成雲端備份或匯出本機備份檔。',
     ],
   },
   {
@@ -1480,14 +1497,16 @@ async function dataUrlToBlob(dataUrl) {
   return res.blob();
 }
 
-async function exportBackup() {
+// Build the full backup bundle (readings + medication logs + settings +
+// photos as data URLs). Shared by the file export and the cloud backup.
+async function buildBackupObject() {
   const photoIds = readings.map(r => r.photoId).filter(Boolean);
   const photos = {};
   for (const id of photoIds) {
     const blob = await getPhoto(id);
     if (blob) photos[id] = await blobToDataUrl(blob);
   }
-  const backup = {
+  return {
     version: 2,
     exportedAt: new Date().toISOString(),
     readings,
@@ -1495,6 +1514,42 @@ async function exportBackup() {
     settings,
     photos,
   };
+}
+
+// Overwrite all local data from a backup bundle. Callers are responsible for
+// confirming with the user first. Suppresses cloud auto-backup while applying
+// so a restore doesn't immediately upload back over the source.
+async function applyBackupObject(data) {
+  suppressCloud = true;
+  try {
+    const existingPhotoIds = readings.map(r => r.photoId).filter(Boolean);
+    await deletePhotos(existingPhotoIds);
+
+    const photos = data.photos || {};
+    for (const [id, dataUrl] of Object.entries(photos)) {
+      try {
+        const blob = await dataUrlToBlob(dataUrl);
+        await savePhoto(id, blob);
+      } catch {}
+    }
+
+    readings = data.readings;
+    saveReadings(readings);
+    medLogs = (data.medLogs && typeof data.medLogs === 'object') ? data.medLogs : {};
+    saveMedLogs(medLogs);
+    if (data.settings) {
+      settings = { ...loadSettings(), ...data.settings };
+      saveSettings(settings);
+    }
+    resetForm();
+    renderAll();
+  } finally {
+    suppressCloud = false;
+  }
+}
+
+async function exportBackup() {
+  const backup = await buildBackupObject();
   const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1519,29 +1574,12 @@ async function importBackupFile(file) {
   }
   if (!confirm(`確定要還原這份備份嗎？這會覆蓋目前所有紀錄與設定（備份中共 ${data.readings.length} 筆紀錄）。`)) return;
 
-  const existingPhotoIds = readings.map(r => r.photoId).filter(Boolean);
-  await deletePhotos(existingPhotoIds);
-
-  const photos = data.photos || {};
-  for (const [id, dataUrl] of Object.entries(photos)) {
-    try {
-      const blob = await dataUrlToBlob(dataUrl);
-      await savePhoto(id, blob);
-    } catch {}
-  }
-
-  readings = data.readings;
-  saveReadings(readings);
-  medLogs = (data.medLogs && typeof data.medLogs === 'object') ? data.medLogs : {};
-  saveMedLogs(medLogs);
-  if (data.settings) {
-    settings = { ...loadSettings(), ...data.settings };
-    saveSettings(settings);
-  }
-  resetForm();
-  renderAll();
+  await applyBackupObject(data);
   closeSettings();
   showToast('已還原備份');
+  // If cloud backup is on, push the just-restored data up so the cloud and this
+  // device agree (applyBackupObject suppressed the auto-upload).
+  if (cloudState.enabled) scheduleCloudBackup();
 }
 
 document.getElementById('exportBackupBtn').addEventListener('click', exportBackup);
@@ -1556,6 +1594,351 @@ document.getElementById('importBackupInput').addEventListener('change', async (e
   if (!file) return;
   await importBackupFile(file);
 });
+
+// ================= Cloud backup: Google Drive (appDataFolder) =================
+// Backs up the whole bundle to a hidden, app-private folder in the user's OWN
+// Google Drive — no server ever holds the data. Model: backup-first,
+// last-write-wins on a single JSON file. On app open, if the cloud copy is
+// newer than what this device last synced, the user is prompted to restore.
+// A previous version is preserved as a .prev file only when a genuine
+// cross-device conflict is detected, so a stray overwrite stays recoverable.
+// (The GOOGLE_CLIENT_ID / DRIVE_SCOPE / CLOUD_* constants are declared at the
+// top of the file — see the note there about the top-level loadCloudState call.)
+
+let gisToken = null;       // { access_token, expiresAt } — kept in memory only, never persisted
+let tokenClient = null;
+let cloudTimer = null;
+let cloudBusy = false;
+let _tokResolve = null, _tokReject = null;
+
+function loadCloudState() {
+  const defaults = { enabled: false, fileId: '', prevFileId: '', lastSyncedAt: '', deviceId: '' };
+  let s;
+  try { s = { ...defaults, ...JSON.parse(localStorage.getItem(CLOUD_KEY)) }; }
+  catch { s = { ...defaults }; }
+  if (!s.deviceId) s.deviceId = crypto.randomUUID();
+  localStorage.setItem(CLOUD_KEY, JSON.stringify(s));
+  return s;
+}
+
+function saveCloudState() {
+  localStorage.setItem(CLOUD_KEY, JSON.stringify(cloudState));
+}
+
+function friendlyCloudErr(e) {
+  const m = (e && e.message) || '';
+  if (/popup_closed|access_denied|interaction_required|auth_failed|popup_failed/i.test(m)) return '登入未完成';
+  if (/network|Failed to fetch/i.test(m)) return '網路連線問題';
+  return '請稍後再試';
+}
+
+// Lazily load Google Identity Services only when cloud backup is actually used,
+// so the app still starts instantly (and offline) for users who never enable it.
+function ensureGis() {
+  return new Promise((resolve, reject) => {
+    if (window.google && google.accounts && google.accounts.oauth2) return resolve();
+    let s = document.getElementById('gisScript');
+    if (s) {
+      s.addEventListener('load', () => resolve());
+      s.addEventListener('error', () => reject(new Error('network')));
+      return;
+    }
+    s = document.createElement('script');
+    s.id = 'gisScript';
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true; s.defer = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('network'));
+    document.head.appendChild(s);
+  });
+}
+
+function initTokenClient() {
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: DRIVE_SCOPE,
+    callback: (resp) => {
+      const ok = _tokResolve, fail = _tokReject;
+      _tokResolve = _tokReject = null;
+      if (resp && resp.access_token) {
+        gisToken = { access_token: resp.access_token, expiresAt: Date.now() + ((Number(resp.expires_in) || 3600) * 1000) };
+        ok && ok(resp.access_token);
+      } else {
+        fail && fail(new Error((resp && resp.error) || 'auth_failed'));
+      }
+    },
+    error_callback: (err) => {
+      const fail = _tokReject;
+      _tokResolve = _tokReject = null;
+      fail && fail(new Error((err && err.type) || 'popup_closed'));
+    },
+  });
+}
+
+// Get a valid access token. interactive=true may open the Google consent/login
+// popup; interactive=false only tries a silent refresh (used by background sync,
+// so it can quietly no-op when the Google session has lapsed).
+async function getAccessToken(interactive) {
+  await ensureGis();
+  if (gisToken && gisToken.expiresAt - 60000 > Date.now()) return gisToken.access_token;
+  if (!tokenClient) initTokenClient();
+  return new Promise((resolve, reject) => {
+    _tokResolve = resolve; _tokReject = reject;
+    try {
+      tokenClient.requestAccessToken({ prompt: interactive ? 'consent' : '' });
+    } catch (e) {
+      _tokResolve = _tokReject = null;
+      reject(e);
+    }
+  });
+}
+
+async function driveFetch(url, opts) {
+  let token = await getAccessToken(false);
+  const build = (t) => ({ ...opts, headers: { ...(opts && opts.headers), Authorization: 'Bearer ' + t } });
+  let res = await fetch(url, build(token));
+  if (res.status === 401) { // token stale/revoked — force one silent refresh and retry
+    gisToken = null;
+    token = await getAccessToken(false);
+    res = await fetch(url, build(token));
+  }
+  return res;
+}
+
+async function driveFindFile(name) {
+  const q = encodeURIComponent(`name='${name}'`);
+  const url = `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id,name,modifiedTime,appProperties)&pageSize=5`;
+  const res = await driveFetch(url, { method: 'GET' });
+  if (!res.ok) throw new Error('list_failed');
+  const data = await res.json();
+  return (data.files && data.files[0]) || null;
+}
+
+async function driveGetMeta(fileId) {
+  const url = `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,appProperties,modifiedTime`;
+  const res = await driveFetch(url, { method: 'GET' });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+async function driveDownloadText(fileId) {
+  const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, { method: 'GET' });
+  if (!res.ok) throw new Error('download_failed');
+  return res.text();
+}
+
+async function driveUpload(fileId, name, contentStr, appProps) {
+  const boundary = 'bpb' + Math.random().toString(16).slice(2);
+  const metadata = fileId
+    ? { appProperties: appProps }
+    : { name, parents: ['appDataFolder'], appProperties: appProps };
+  const body =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+    JSON.stringify(metadata) +
+    `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n` +
+    contentStr +
+    `\r\n--${boundary}--`;
+  const base = 'https://www.googleapis.com/upload/drive/v3/files';
+  const url = fileId
+    ? `${base}/${fileId}?uploadType=multipart&fields=id,appProperties`
+    : `${base}?uploadType=multipart&fields=id,appProperties`;
+  const res = await driveFetch(url, {
+    method: fileId ? 'PATCH' : 'POST',
+    headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body,
+  });
+  if (!res.ok) throw new Error('upload_failed');
+  return res.json();
+}
+
+async function resolveMainFileId() {
+  if (cloudState.fileId) return cloudState.fileId;
+  const f = await driveFindFile(CLOUD_FILE_NAME);
+  if (f) { cloudState.fileId = f.id; saveCloudState(); return f.id; }
+  return '';
+}
+
+// Copy the current remote main file to the .prev file before overwriting, so a
+// version written by another device isn't lost to a last-write-wins overwrite.
+async function preserveRemoteAsPrev(fileId) {
+  try {
+    const text = await driveDownloadText(fileId);
+    const r = await driveUpload(cloudState.prevFileId || '', CLOUD_PREV_NAME, text, { savedAt: new Date().toISOString() });
+    cloudState.prevFileId = r.id;
+    saveCloudState();
+  } catch {}
+}
+
+function setCloudBusy(b) {
+  ['cloudConnectBtn', 'cloudBackupNowBtn', 'cloudRestoreBtn', 'cloudDisconnectBtn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = b;
+  });
+}
+
+function updateCloudUI() {
+  const enabled = !!cloudState.enabled;
+  const disc = document.getElementById('cloudDisconnectedBox');
+  const conn = document.getElementById('cloudConnectedBox');
+  if (disc) disc.hidden = enabled;
+  if (conn) conn.hidden = !enabled;
+  const status = document.getElementById('cloudStatus');
+  if (status) {
+    if (!enabled) status.textContent = '';
+    else if (cloudState.lastSyncedAt) {
+      const d = new Date(cloudState.lastSyncedAt);
+      status.textContent = `已連結，上次備份：${d.toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })}`;
+    } else {
+      status.textContent = '已連結，尚未備份';
+    }
+  }
+}
+
+function scheduleCloudBackup() {
+  if (!cloudState.enabled || suppressCloud) return;
+  clearTimeout(cloudTimer);
+  cloudTimer = setTimeout(() => { cloudBackupNow({}); }, CLOUD_DEBOUNCE_MS);
+}
+
+async function cloudBackupNow({ manual = false, interactive = false } = {}) {
+  if (!cloudState.enabled && !interactive) return;
+  if (cloudBusy) return;
+  cloudBusy = true;
+  setCloudBusy(true);
+  try {
+    if (interactive) await getAccessToken(true);
+    const bundle = await buildBackupObject();
+    const updatedAt = new Date().toISOString();
+    bundle.cloudUpdatedAt = updatedAt;
+    bundle.deviceId = cloudState.deviceId;
+    const contentStr = JSON.stringify(bundle);
+
+    const fileId = await resolveMainFileId();
+    if (fileId) {
+      const meta = await driveGetMeta(fileId);
+      const remoteUpdated = meta && meta.appProperties && meta.appProperties.updatedAt;
+      if (remoteUpdated && remoteUpdated !== cloudState.lastSyncedAt) {
+        await preserveRemoteAsPrev(fileId); // another device wrote since we synced — keep it recoverable
+      }
+    }
+
+    const result = await driveUpload(fileId, CLOUD_FILE_NAME, contentStr, { updatedAt, deviceId: cloudState.deviceId });
+    cloudState.fileId = result.id;
+    cloudState.lastSyncedAt = updatedAt;
+    saveCloudState();
+    updateCloudUI();
+    if (manual) showToast('已備份到雲端');
+  } catch (e) {
+    if (manual || interactive) showToast('雲端備份失敗：' + friendlyCloudErr(e));
+  } finally {
+    cloudBusy = false;
+    setCloudBusy(false);
+  }
+}
+
+async function cloudRestore({ manual = false, confirmFirst = true, confirmMsg = '' } = {}) {
+  setCloudBusy(true);
+  try {
+    if (manual) await getAccessToken(true);
+    const fileId = await resolveMainFileId();
+    if (!fileId) { if (manual) showToast('雲端沒有備份可還原'); return 'none'; }
+    const text = await driveDownloadText(fileId);
+    let data;
+    try { data = JSON.parse(text); } catch { showToast('雲端備份格式錯誤'); return 'error'; }
+    if (!data || !Array.isArray(data.readings)) { showToast('雲端備份格式錯誤'); return 'error'; }
+    if (confirmFirst) {
+      const msg = confirmMsg || `確定要用雲端備份還原嗎？這會覆蓋此裝置目前所有紀錄與設定（雲端共 ${data.readings.length} 筆紀錄）。`;
+      if (!confirm(msg)) return 'declined';
+    }
+    await applyBackupObject(data);
+    const meta = await driveGetMeta(fileId);
+    cloudState.lastSyncedAt = (meta && meta.appProperties && meta.appProperties.updatedAt) || data.cloudUpdatedAt || cloudState.lastSyncedAt;
+    saveCloudState();
+    updateCloudUI();
+    closeSettings();
+    showToast('已從雲端還原');
+    return 'restored';
+  } catch (e) {
+    showToast('雲端還原失敗：' + friendlyCloudErr(e));
+    return 'error';
+  } finally {
+    setCloudBusy(false);
+  }
+}
+
+// First time the user links an account: reconcile this device with whatever is
+// already in the cloud, so linking never silently loses data on either side.
+async function cloudReconcileOnConnect() {
+  const f = await driveFindFile(CLOUD_FILE_NAME);
+  if (!f) { await cloudBackupNow({ manual: true }); return; }
+  cloudState.fileId = f.id;
+  saveCloudState();
+  if (readings.length === 0) {
+    await cloudRestore({ manual: true, confirmFirst: false });
+    return;
+  }
+  const restore = confirm('雲端已有一份備份。\n\n選「確定」＝用雲端資料還原到此裝置；\n選「取消」＝保留此裝置資料並上傳覆蓋雲端。');
+  if (restore) await cloudRestore({ manual: true, confirmFirst: false });
+  else await cloudBackupNow({ manual: true });
+}
+
+async function cloudConnect() {
+  setCloudBusy(true);
+  try {
+    await getAccessToken(true); // interactive consent/login
+    cloudState.enabled = true;
+    saveCloudState();
+    updateCloudUI();
+    showToast('已連結 Google 雲端備份');
+    await cloudReconcileOnConnect();
+  } catch (e) {
+    showToast('連結失敗：' + friendlyCloudErr(e));
+  } finally {
+    setCloudBusy(false);
+  }
+}
+
+function cloudDisconnect() {
+  if (!confirm('解除連結後，此裝置將停止自動備份（雲端上已存的備份不會被刪除）。確定解除？')) return;
+  try {
+    if (gisToken && window.google && google.accounts && google.accounts.oauth2) {
+      google.accounts.oauth2.revoke(gisToken.access_token, () => {});
+    }
+  } catch {}
+  gisToken = null;
+  cloudState.enabled = false;
+  cloudState.fileId = '';
+  cloudState.prevFileId = '';
+  cloudState.lastSyncedAt = '';
+  saveCloudState();
+  updateCloudUI();
+  showToast('已解除雲端連結');
+}
+
+// On app open / return to foreground: if the cloud has a version this device
+// hasn't synced (i.e. edited on another device), offer to restore it. If the
+// user keeps local data, push it up so we agree and stop re-prompting.
+async function cloudCheckOnOpen() {
+  if (!cloudState.enabled || cloudBusy) return;
+  try {
+    const fileId = await resolveMainFileId();
+    if (!fileId) return;
+    const meta = await driveGetMeta(fileId);
+    const remoteUpdated = meta && meta.appProperties && meta.appProperties.updatedAt;
+    if (!remoteUpdated || remoteUpdated === cloudState.lastSyncedAt) return;
+    const status = await cloudRestore({
+      confirmFirst: true,
+      confirmMsg: '雲端有較新的備份（可能來自其他裝置）。\n\n要用雲端資料還原到此裝置嗎？選「取消」則保留此裝置資料，之後的變更會覆蓋雲端。',
+    });
+    if (status === 'declined') await cloudBackupNow({});
+  } catch {}
+}
+
+document.getElementById('cloudConnectBtn').addEventListener('click', cloudConnect);
+document.getElementById('cloudDisconnectBtn').addEventListener('click', cloudDisconnect);
+document.getElementById('cloudBackupNowBtn').addEventListener('click', () => cloudBackupNow({ manual: true, interactive: true }));
+document.getElementById('cloudRestoreBtn').addEventListener('click', () => cloudRestore({ manual: true }));
+updateCloudUI();
 
 // The periodic reminder now produces the report (which is then shared, saved
 // or printed) instead of opening a text-only mailto.
@@ -2080,6 +2463,13 @@ resetForm();
 renderAll();
 document.getElementById('appVersion').textContent = `版本 ${APP_VERSION}`;
 maybeShowManualOnStart();
+
+// Cloud backup: check for a newer cloud copy on open and whenever the app
+// returns to the foreground (e.g. edited on another device meanwhile).
+if (cloudState.enabled) cloudCheckOnOpen();
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && cloudState.enabled) cloudCheckOnOpen();
+});
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   // Reload once when a newly-installed service worker takes control, so a

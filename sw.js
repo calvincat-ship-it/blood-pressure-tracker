@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bp-tracker-v23';
+const CACHE_NAME = 'bp-tracker-v24';
 const ASSETS = [
   './',
   './index.html',
@@ -27,6 +27,10 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  // Only handle same-origin app assets. Cross-origin requests (Google Identity
+  // Services script, Drive API) must pass straight through to the network —
+  // caching authenticated API responses would be both stale and a privacy leak.
+  if (new URL(event.request.url).origin !== self.location.origin) return;
   event.respondWith(
     fetch(event.request, { cache: 'no-store' })
       .then((response) => {
