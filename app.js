@@ -1,4 +1,4 @@
-const APP_VERSION = 'v22';
+const APP_VERSION = 'v23';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -653,6 +653,7 @@ const MANUAL_SECTIONS = [
       '清除瀏覽器資料會一併刪除紀錄，請定期備份。',
       '設定頁最下方會顯示目前版本，可確認是否已更新到最新版。',
       '版本更新後，本使用說明會自動顯示一次；之後是否顯示，依您在設定中的勾選為準。',
+      '介面會自動跟隨手機的淺色／深色模式：手機切到深色時，App 也會自動變成深色配色，不需另外設定。',
     ],
   },
 ];
@@ -1639,11 +1640,13 @@ function renderSummary() {
   const latestTag = document.getElementById('latestTag');
   if (!latest) {
     latestValue.textContent = '—';
+    latestValue.className = 'summary-value';
     latestTag.textContent = '';
     latestTag.className = 'summary-tag';
   } else {
     latestValue.textContent = `${latest.systolic}/${latest.diastolic}`;
     const c = classify(latest.systolic, latest.diastolic);
+    latestValue.className = `summary-value cat-${c.cls}`;
     latestTag.textContent = c.label;
     latestTag.className = `summary-tag badge-${c.cls}`;
   }
