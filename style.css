@@ -891,6 +891,22 @@ input:disabled {
   color: var(--text-muted);
 }
 
+.btn-danger {
+  background: linear-gradient(135deg, var(--stage2) 0%, var(--crisis) 100%);
+  color: #fff;
+  box-shadow: var(--shadow-btn);
+}
+
+.clear-warn {
+  font-weight: 600;
+  color: var(--crisis);
+  background: color-mix(in srgb, var(--crisis) 12%, var(--card-bg));
+  border: 1px solid color-mix(in srgb, var(--crisis) 30%, var(--card-bg));
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+
 .settings-section-title {
   font-size: 14px;
   color: var(--primary-dark);

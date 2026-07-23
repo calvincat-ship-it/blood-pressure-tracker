@@ -1,4 +1,4 @@
-const APP_VERSION = 'v26';
+const APP_VERSION = 'v27';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -667,6 +667,7 @@ const MANUAL_SECTIONS = [
       '多台裝置：開啟 App 時若偵測到雲端有較新的備份，會詢問是否還原到本機（採最後儲存者優先，並保留前一版以防萬一）。',
       '更換帳號：按「更換帳號」（或先解除連結再連結另一個 Google 帳號）時，App 會先清除此裝置上前一個帳號的所有資料，再改用新帳號的雲端資料還原，避免不同帳號的資料混在一起。前一個帳號的雲端備份仍會保留，之後可再切回。',
       '本機備份檔：也可將所有紀錄、設定與照片匯出成一個檔案離線保存；匯入還原會「完全覆蓋」目前資料，執行前會先確認。',
+      '清除歷史資料：設定中提供「清除歷史資料」，可選擇僅清除本機資料、僅清除雲端備份資料、或兩者都清除。此操作無法復原，選擇後會再次確認；清除雲端資料需 Google 帳號授權，清除完成後會解除此裝置的雲端連結。',
       '更換手機或瀏覽器前，請先完成雲端備份或匯出本機備份檔。',
     ],
   },
@@ -2180,6 +2181,103 @@ async function cloudSwitchAccount() {
   await cloudConnect({ switchAccount: true });
 }
 
+// ---- Clear historical data (settings → 清除歷史資料) ----
+// Destructive; guarded by a second confirm, and cloud-scoped deletions require
+// Google authorization. Every clear ends by disconnecting cloud on this device
+// (see disconnectCloudSilently) so a cleared device can't later clobber the
+// cloud, and a cloud-cleared account isn't silently re-populated.
+
+// Local health records only (readings + medication logs + photos) — settings,
+// reminders and report info are deliberately preserved (per the user's choice).
+async function clearLocalRecords() {
+  suppressCloud = true;
+  try {
+    const ids = readings.map(r => r.photoId).filter(Boolean);
+    await deletePhotos(ids).catch(() => {});
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(MED_KEY);
+    readings = loadReadings();
+    medLogs = loadMedLogs();
+    resetForm();
+    renderAll();
+  } finally {
+    suppressCloud = false;
+  }
+}
+
+async function listAllAppDataFiles() {
+  const url = 'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name)&pageSize=200';
+  const res = await driveFetch(url, { method: 'GET' });
+  if (!res.ok) throw new Error('list_failed');
+  const data = await res.json();
+  return data.files || [];
+}
+
+// Delete everything in the account's appDataFolder — main backup, .prev, and
+// every history snapshot.
+async function deleteAllCloudData() {
+  const files = await listAllAppDataFiles();
+  for (const f of files) { await driveDelete(f.id).catch(() => {}); }
+}
+
+function disconnectCloudSilently() {
+  gisToken = null;
+  cloudState.enabled = false;
+  cloudState.email = '';
+  cloudState.dataOwnerEmail = '';
+  cloudState.fileId = '';
+  cloudState.prevFileId = '';
+  cloudState.lastSyncedAt = '';
+  cloudState.lastSnapshotDate = '';
+  saveCloudState();
+  updateCloudUI();
+}
+
+function openClearDataModal() {
+  const first = document.querySelector('input[name="clearScope"][value="local"]');
+  if (first) first.checked = true;
+  document.getElementById('clearDataModal').hidden = false;
+}
+
+function closeClearDataModal() {
+  document.getElementById('clearDataModal').hidden = true;
+}
+
+async function performClearData() {
+  const sel = document.querySelector('input[name="clearScope"]:checked');
+  if (!sel) return;
+  const scope = sel.value; // 'local' | 'cloud' | 'both'
+  const clearsCloud = scope === 'cloud' || scope === 'both';
+  const clearsLocal = scope === 'local' || scope === 'both';
+
+  const desc = scope === 'local' ? '此裝置的血壓與用藥紀錄（含照片）'
+    : scope === 'cloud' ? '雲端上所有備份與歷史版本'
+    : '此裝置與雲端上的所有血壓與用藥紀錄、備份與歷史版本';
+  // Second confirmation (the modal selection is the first).
+  const msg = `確定要清除${desc}嗎？\n\n此操作無法復原！`
+    + (clearsCloud ? '\n（雲端刪除需要 Google 帳號授權）' : '')
+    + '\n清除完成後會解除此裝置的雲端連結。';
+  if (!confirm(msg)) return;
+
+  closeClearDataModal();
+  setCloudBusy(true);
+  try {
+    if (clearsCloud) {
+      await getAccessToken(''); // Google authorization required for cloud deletion
+      await deleteAllCloudData();
+    }
+    if (clearsLocal) {
+      await clearLocalRecords();
+    }
+    disconnectCloudSilently();
+    showToast('已清除所選資料');
+  } catch (e) {
+    showToast('清除失敗：' + friendlyCloudErr(e));
+  } finally {
+    setCloudBusy(false);
+  }
+}
+
 function cloudDisconnect() {
   if (!confirm('解除連結後，此裝置將停止自動備份（雲端上已存的備份不會被刪除）。確定解除？')) return;
   try {
@@ -2226,6 +2324,12 @@ document.getElementById('closeRestorePickerBtn').addEventListener('click', close
 document.getElementById('confirmRestoreVersionBtn').addEventListener('click', confirmRestoreVersion);
 document.getElementById('restorePickerModal').addEventListener('click', (e) => {
   if (e.target.id === 'restorePickerModal') closeRestorePicker();
+});
+document.getElementById('openClearDataBtn').addEventListener('click', openClearDataModal);
+document.getElementById('closeClearDataBtn').addEventListener('click', closeClearDataModal);
+document.getElementById('confirmClearDataBtn').addEventListener('click', performClearData);
+document.getElementById('clearDataModal').addEventListener('click', (e) => {
+  if (e.target.id === 'clearDataModal') closeClearDataModal();
 });
 updateCloudUI();
 

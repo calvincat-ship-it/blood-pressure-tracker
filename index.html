@@ -337,6 +337,14 @@
         <input type="file" accept="application/json" id="importBackupInput" hidden>
       </div>
 
+      <hr class="settings-divider">
+
+      <h3 class="settings-section-title">清除歷史資料</h3>
+      <p class="settings-meta">清除本機或雲端上的血壓與用藥紀錄。此操作無法復原，選擇後會再次確認；刪除雲端資料需 Google 帳號授權。</p>
+      <div class="form-actions">
+        <button type="button" id="openClearDataBtn" class="secondary-btn">🗑 清除歷史資料</button>
+      </div>
+
       <div class="form-actions">
         <button type="submit" class="primary-btn">儲存設定</button>
       </div>
@@ -355,6 +363,42 @@
     <div id="restoreVersionList" class="restore-version-list"></div>
     <div class="form-actions">
       <button type="button" id="confirmRestoreVersionBtn" class="primary-btn">還原所選版本</button>
+    </div>
+  </div>
+</div>
+
+<div id="clearDataModal" class="modal-backdrop" hidden>
+  <div class="modal-sheet">
+    <div class="modal-header">
+      <h2>清除歷史資料</h2>
+      <button type="button" id="closeClearDataBtn" class="icon-btn" aria-label="關閉">✕</button>
+    </div>
+    <p class="settings-meta clear-warn">⚠️ 此操作無法復原。清除完成後會解除此裝置的雲端連結（雲端備份若未一併清除仍會保留，可重新連結還原）。</p>
+    <div class="restore-version-list">
+      <label class="restore-version-item">
+        <input type="radio" name="clearScope" value="local" checked>
+        <span class="rv-text">
+          <span class="rv-main">僅清除本機資料</span>
+          <span class="rv-sub">清除此裝置的血壓、用藥紀錄與照片；雲端備份保留</span>
+        </span>
+      </label>
+      <label class="restore-version-item">
+        <input type="radio" name="clearScope" value="cloud">
+        <span class="rv-text">
+          <span class="rv-main">僅清除雲端備份資料</span>
+          <span class="rv-sub">刪除雲端上所有備份與歷史版本；本機資料保留（需 Google 授權）</span>
+        </span>
+      </label>
+      <label class="restore-version-item">
+        <input type="radio" name="clearScope" value="both">
+        <span class="rv-text">
+          <span class="rv-main">清除本機及雲端備份資料</span>
+          <span class="rv-sub">兩者都清除，完全重來（需 Google 授權）</span>
+        </span>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button type="button" id="confirmClearDataBtn" class="primary-btn btn-danger">清除所選資料</button>
     </div>
   </div>
 </div>
