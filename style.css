@@ -835,8 +835,14 @@ input:disabled {
   padding: 8px 10px;
 }
 
-.cloud-disconnect-row {
-  justify-content: flex-end;
+.cloud-secondary-row {
+  align-items: center;
+}
+
+.cloud-secondary-row .text-danger-btn {
+  flex: none;
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .restore-version-list {

@@ -1,4 +1,4 @@
-const APP_VERSION = 'v25';
+const APP_VERSION = 'v26';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -665,6 +665,7 @@ const MANUAL_SECTIONS = [
       '歷史版本：連結雲端後，每天第一次新增血壓或用藥記錄時，會自動在雲端保留一份「當天之前」的歷史版本，最多保留 7 份（超過會自動刪除最舊一份）。',
       '按「從雲端還原」時會列出可還原的版本：預設選「最新版本（即時）」，也可改選某一天的歷史版本。還原較舊的版本後，該版本會成為雲端最新版本，並同步到其他裝置。',
       '多台裝置：開啟 App 時若偵測到雲端有較新的備份，會詢問是否還原到本機（採最後儲存者優先，並保留前一版以防萬一）。',
+      '更換帳號：按「更換帳號」（或先解除連結再連結另一個 Google 帳號）時，App 會先清除此裝置上前一個帳號的所有資料，再改用新帳號的雲端資料還原，避免不同帳號的資料混在一起。前一個帳號的雲端備份仍會保留，之後可再切回。',
       '本機備份檔：也可將所有紀錄、設定與照片匯出成一個檔案離線保存；匯入還原會「完全覆蓋」目前資料，執行前會先確認。',
       '更換手機或瀏覽器前，請先完成雲端備份或匯出本機備份檔。',
     ],
@@ -1618,7 +1619,7 @@ let cloudBusy = false;
 let _tokResolve = null, _tokReject = null;
 
 function loadCloudState() {
-  const defaults = { enabled: false, email: '', fileId: '', prevFileId: '', lastSyncedAt: '', lastSnapshotDate: '', deviceId: '' };
+  const defaults = { enabled: false, email: '', dataOwnerEmail: '', fileId: '', prevFileId: '', lastSyncedAt: '', lastSnapshotDate: '', deviceId: '' };
   let s;
   try { s = { ...defaults, ...JSON.parse(localStorage.getItem(CLOUD_KEY)) }; }
   catch { s = { ...defaults }; }
@@ -1752,11 +1753,21 @@ async function driveGetUserEmail() {
 }
 
 // Existing links (from before the account line was added) have no stored email;
-// fetch it quietly on open so the account still shows without a re-link.
+// fetch it quietly on open so the account still shows without a re-link. Also
+// back-fills dataOwnerEmail — for an already-linked device the on-device data
+// belongs to the linked account — so the account-switch guard has a baseline.
 async function refreshCloudEmailIfMissing() {
-  if (!cloudState.enabled || cloudState.email) return;
-  const email = await driveGetUserEmail();
-  if (email) { cloudState.email = email; saveCloudState(); updateCloudUI(); }
+  if (!cloudState.enabled) return;
+  let changed = false;
+  if (!cloudState.email) {
+    const email = await driveGetUserEmail();
+    if (email) { cloudState.email = email; changed = true; }
+  }
+  if (cloudState.email && !cloudState.dataOwnerEmail) {
+    cloudState.dataOwnerEmail = cloudState.email;
+    changed = true;
+  }
+  if (changed) { saveCloudState(); updateCloudUI(); }
 }
 
 async function driveUpload(fileId, name, contentStr, appProps) {
@@ -1876,7 +1887,7 @@ function maybeDailySnapshot() {
 }
 
 function setCloudBusy(b) {
-  ['cloudConnectBtn', 'cloudBackupNowBtn', 'cloudRestoreBtn', 'cloudDisconnectBtn'].forEach(id => {
+  ['cloudConnectBtn', 'cloudBackupNowBtn', 'cloudRestoreBtn', 'cloudSwitchBtn', 'cloudDisconnectBtn'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = b;
   });
@@ -1941,6 +1952,7 @@ async function cloudBackupNow({ manual = false, interactive = false } = {}) {
     const result = await driveUpload(fileId, CLOUD_FILE_NAME, contentStr, { updatedAt, deviceId: cloudState.deviceId, count: String(readings.length) });
     cloudState.fileId = result.id;
     cloudState.lastSyncedAt = updatedAt;
+    if (cloudState.email) cloudState.dataOwnerEmail = cloudState.email; // this device's data now belongs to this account
     saveCloudState();
     updateCloudUI();
     if (manual) showToast('已備份到雲端');
@@ -1969,6 +1981,7 @@ async function cloudRestore({ manual = false, confirmFirst = true, confirmMsg = 
     await applyBackupObject(data);
     const meta = await driveGetMeta(fileId);
     cloudState.lastSyncedAt = (meta && meta.appProperties && meta.appProperties.updatedAt) || data.cloudUpdatedAt || cloudState.lastSyncedAt;
+    if (cloudState.email) cloudState.dataOwnerEmail = cloudState.email;
     saveCloudState();
     updateCloudUI();
     closeSettings();
@@ -2071,6 +2084,7 @@ async function restoreFromSnapshot(fileId, label) {
     // empty makes the upload treat the current main as "changed" and preserve it
     // as the .prev safety copy before overwriting.
     cloudState.lastSyncedAt = '';
+    if (cloudState.email) cloudState.dataOwnerEmail = cloudState.email;
     saveCloudState();
     await cloudBackupNow({});
     updateCloudUI();
@@ -2099,21 +2113,71 @@ async function cloudReconcileOnConnect() {
   else await cloudBackupNow({ manual: true });
 }
 
-async function cloudConnect() {
+// Wipe all on-device data (readings, medication logs, photos, settings and
+// reminder runtime state). Used when switching to a different Google account so
+// one account's data never mixes into another's. Suppresses cloud auto-backup
+// while clearing. Cloud connection state (bp_cloud_v1) is NOT touched here.
+async function clearAllLocalData() {
+  suppressCloud = true;
+  try {
+    const ids = readings.map(r => r.photoId).filter(Boolean);
+    await deletePhotos(ids).catch(() => {});
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(MED_KEY);
+    localStorage.removeItem(SETTINGS_KEY);
+    localStorage.removeItem(FIRED_SLOTS_KEY);
+    localStorage.removeItem(MED_REMINDER_STATE_KEY);
+    readings = loadReadings();   // []
+    medLogs = loadMedLogs();     // {}
+    settings = loadSettings();   // defaults
+    resetForm();
+    renderAll();
+  } finally {
+    suppressCloud = false;
+  }
+}
+
+async function cloudConnect({ switchAccount = false } = {}) {
   setCloudBusy(true);
   try {
-    await getAccessToken(''); // first link shows consent; a remembered grant stays silent
+    if (switchAccount) gisToken = null; // force the account chooser so a different account can be picked
+    await getAccessToken(switchAccount ? 'select_account' : ''); // first link shows consent; a remembered grant stays silent
+    const newEmail = await driveGetUserEmail();
+
+    // Account-switch guard: if this device holds data belonging to a DIFFERENT
+    // account, clear it before adopting the new one, so accounts never mix.
+    const prevOwner = cloudState.dataOwnerEmail || cloudState.email;
+    const switching = readings.length > 0 && !!prevOwner && !!newEmail && prevOwner !== newEmail;
+    if (switching && !switchAccount) { // auto-detected (解除→連結 a different account): confirm the wipe
+      const ok = confirm(`偵測到更換帳號。\n\n此裝置目前的資料屬於「${prevOwner}」，將先清除，改用「${newEmail}」的雲端資料。\n（前一個帳號的雲端備份仍會保留，之後可再切回。）\n\n確定要更換嗎？`);
+      if (!ok) { showToast('已取消更換帳號'); return; }
+    }
+    if (switching) await clearAllLocalData();
+
     cloudState.enabled = true;
-    cloudState.email = await driveGetUserEmail();
+    cloudState.email = newEmail;
+    cloudState.fileId = '';
+    cloudState.prevFileId = '';
+    cloudState.lastSyncedAt = '';
+    cloudState.lastSnapshotDate = '';
     saveCloudState();
     updateCloudUI();
-    showToast('已連結 Google 雲端備份');
+    showToast(switching ? '已更換帳號' : '已連結 Google 雲端備份');
     await cloudReconcileOnConnect();
+    if (newEmail) { cloudState.dataOwnerEmail = newEmail; saveCloudState(); updateCloudUI(); }
   } catch (e) {
     showToast('連結失敗：' + friendlyCloudErr(e));
   } finally {
     setCloudBusy(false);
   }
+}
+
+// Explicit 更換帳號 button: confirm intent, then run the connect flow forcing the
+// Google account chooser. If a different account is picked, cloudConnect clears
+// this device's current-account data and restores the new account's cloud data.
+async function cloudSwitchAccount() {
+  if (!confirm('更換帳號會先清除此裝置上目前帳號的資料，再改用你選擇的另一個 Google 帳號的雲端資料。\n（目前帳號的雲端備份仍會保留，之後可再切回。）\n\n要選擇要更換的帳號嗎？')) return;
+  await cloudConnect({ switchAccount: true });
 }
 
 function cloudDisconnect() {
@@ -2153,7 +2217,8 @@ async function cloudCheckOnOpen() {
   } catch {}
 }
 
-document.getElementById('cloudConnectBtn').addEventListener('click', cloudConnect);
+document.getElementById('cloudConnectBtn').addEventListener('click', () => cloudConnect());
+document.getElementById('cloudSwitchBtn').addEventListener('click', cloudSwitchAccount);
 document.getElementById('cloudDisconnectBtn').addEventListener('click', cloudDisconnect);
 document.getElementById('cloudBackupNowBtn').addEventListener('click', () => cloudBackupNow({ manual: true, interactive: true }));
 document.getElementById('cloudRestoreBtn').addEventListener('click', openRestorePicker);
