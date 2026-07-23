@@ -1,4 +1,4 @@
-const APP_VERSION = 'v24.02';
+const APP_VERSION = 'v25';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -98,6 +98,7 @@ function loadReadings() {
 
 function saveReadings(readings) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(readings));
+  maybeDailySnapshot();
   scheduleCloudBackup();
 }
 
@@ -114,6 +115,7 @@ function loadMedLogs() {
 
 function saveMedLogs(m) {
   localStorage.setItem(MED_KEY, JSON.stringify(m));
+  maybeDailySnapshot();
   scheduleCloudBackup();
 }
 
@@ -660,6 +662,8 @@ const MANUAL_SECTIONS = [
       '連結後會顯示目前登入的 Google 帳號，方便確認備份到哪個帳號。',
       '第一次連結授權後，之後開啟、重新整理或手動備份／還原通常都不需要再次授權（只要仍登入該 Google 帳號）。',
       '連結後每次變動都會自動備份；也可按「立即備份」或「從雲端還原」。換手機時，在新手機登入同一個 Google 帳號即可從雲端還原。',
+      '歷史版本：連結雲端後，每天第一次新增血壓或用藥記錄時，會自動在雲端保留一份「當天之前」的歷史版本，最多保留 7 份（超過會自動刪除最舊一份）。',
+      '按「從雲端還原」時會列出可還原的版本：預設選「最新版本（即時）」，也可改選某一天的歷史版本。還原較舊的版本後，該版本會成為雲端最新版本，並同步到其他裝置。',
       '多台裝置：開啟 App 時若偵測到雲端有較新的備份，會詢問是否還原到本機（採最後儲存者優先，並保留前一版以防萬一）。',
       '本機備份檔：也可將所有紀錄、設定與照片匯出成一個檔案離線保存；匯入還原會「完全覆蓋」目前資料，執行前會先確認。',
       '更換手機或瀏覽器前，請先完成雲端備份或匯出本機備份檔。',
@@ -1614,7 +1618,7 @@ let cloudBusy = false;
 let _tokResolve = null, _tokReject = null;
 
 function loadCloudState() {
-  const defaults = { enabled: false, email: '', fileId: '', prevFileId: '', lastSyncedAt: '', deviceId: '' };
+  const defaults = { enabled: false, email: '', fileId: '', prevFileId: '', lastSyncedAt: '', lastSnapshotDate: '', deviceId: '' };
   let s;
   try { s = { ...defaults, ...JSON.parse(localStorage.getItem(CLOUD_KEY)) }; }
   catch { s = { ...defaults }; }
@@ -1797,6 +1801,80 @@ async function preserveRemoteAsPrev(fileId) {
   } catch {}
 }
 
+// ---- Historical version snapshots (bp-history-<epoch>.json, up to 7) ----
+// On the first data change of each day we server-side COPY the current main
+// backup into a dated snapshot file — so each snapshot captures the state as it
+// stood BEFORE that day's edits (a clean daily checkpoint), and copying avoids
+// re-uploading the whole bundle (photos included) from the phone.
+
+async function driveCopyFile(fileId, name, appProps) {
+  const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/copy?fields=id,appProperties,createdTime`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, parents: ['appDataFolder'], appProperties: appProps }),
+  });
+  if (!res.ok) throw new Error('copy_failed');
+  return res.json();
+}
+
+async function driveDelete(fileId) {
+  const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, { method: 'DELETE' });
+  return res.ok || res.status === 404;
+}
+
+function snapshotTime(f) {
+  const s = f.appProperties && f.appProperties.snapshotAt;
+  const t = s ? Date.parse(s) : Date.parse(f.createdTime || '');
+  return Number.isNaN(t) ? 0 : t;
+}
+
+// All history snapshots, newest first.
+async function listSnapshots() {
+  const q = encodeURIComponent("name contains 'bp-history-'");
+  const url = `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id,name,createdTime,appProperties)&pageSize=50`;
+  const res = await driveFetch(url, { method: 'GET' });
+  if (!res.ok) throw new Error('list_failed');
+  const data = await res.json();
+  return (data.files || []).sort((a, b) => snapshotTime(b) - snapshotTime(a));
+}
+
+async function pruneSnapshots(max) {
+  const snaps = await listSnapshots(); // newest first
+  for (const f of snaps.slice(max)) { // anything past the newest `max` = oldest
+    try { await driveDelete(f.id); } catch {}
+  }
+}
+
+async function createDailySnapshot() {
+  const mainId = await resolveMainFileId();
+  if (!mainId) return; // nothing backed up yet — no prior state to snapshot
+  const meta = await driveGetMeta(mainId);
+  const props = {
+    snapshotAt: new Date().toISOString(),
+    dateStr: localDateStr(),
+    srcUpdatedAt: (meta && meta.appProperties && meta.appProperties.updatedAt) || '',
+    count: (meta && meta.appProperties && meta.appProperties.count) || '',
+  };
+  await driveCopyFile(mainId, `bp-history-${Date.now()}.json`, props);
+  await pruneSnapshots(7);
+}
+
+let snapshotInFlight = false;
+
+// Called from saveReadings/saveMedLogs. Fire-and-forget; on failure leaves
+// lastSnapshotDate unchanged so the next change retries (in-flight flag stops
+// pile-ups). Suppressed during a restore.
+function maybeDailySnapshot() {
+  if (!cloudState.enabled || suppressCloud || snapshotInFlight) return;
+  const today = localDateStr();
+  if (cloudState.lastSnapshotDate === today) return;
+  snapshotInFlight = true;
+  createDailySnapshot()
+    .then(() => { cloudState.lastSnapshotDate = today; saveCloudState(); })
+    .catch(() => {})
+    .finally(() => { snapshotInFlight = false; });
+}
+
 function setCloudBusy(b) {
   ['cloudConnectBtn', 'cloudBackupNowBtn', 'cloudRestoreBtn', 'cloudDisconnectBtn'].forEach(id => {
     const el = document.getElementById(id);
@@ -1860,7 +1938,7 @@ async function cloudBackupNow({ manual = false, interactive = false } = {}) {
       }
     }
 
-    const result = await driveUpload(fileId, CLOUD_FILE_NAME, contentStr, { updatedAt, deviceId: cloudState.deviceId });
+    const result = await driveUpload(fileId, CLOUD_FILE_NAME, contentStr, { updatedAt, deviceId: cloudState.deviceId, count: String(readings.length) });
     cloudState.fileId = result.id;
     cloudState.lastSyncedAt = updatedAt;
     saveCloudState();
@@ -1899,6 +1977,107 @@ async function cloudRestore({ manual = false, confirmFirst = true, confirmMsg = 
   } catch (e) {
     showToast('雲端還原失敗：' + friendlyCloudErr(e));
     return 'error';
+  } finally {
+    setCloudBusy(false);
+  }
+}
+
+// ---- Restore version picker ----
+// The 從雲端還原 button opens a picker listing the live latest backup plus the
+// history snapshots, so the user can choose which version to restore to.
+
+function fmtDateTime(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+async function openRestorePicker() {
+  setCloudBusy(true);
+  try {
+    await getAccessToken(''); // user gesture
+    const mainId = await resolveMainFileId();
+    const items = [];
+    if (mainId) {
+      const meta = await driveGetMeta(mainId);
+      const p = (meta && meta.appProperties) || {};
+      items.push({
+        value: 'latest',
+        main: '最新版本（即時）',
+        sub: [fmtDateTime(p.updatedAt), p.count ? `${p.count} 筆` : ''].filter(Boolean).join('　'),
+      });
+    }
+    let snaps = [];
+    try { snaps = await listSnapshots(); } catch {}
+    for (const f of snaps) {
+      const p = f.appProperties || {};
+      items.push({
+        value: f.id,
+        main: `歷史版本　${p.dateStr || ''}`.trim(),
+        sub: [fmtDateTime(p.snapshotAt || f.createdTime), p.count ? `${p.count} 筆` : ''].filter(Boolean).join('　'),
+      });
+    }
+    if (items.length === 0) { showToast('雲端沒有備份可還原'); return; }
+    renderRestoreVersions(items);
+    document.getElementById('restorePickerModal').hidden = false;
+  } catch (e) {
+    showToast('讀取版本清單失敗：' + friendlyCloudErr(e));
+  } finally {
+    setCloudBusy(false);
+  }
+}
+
+function renderRestoreVersions(items) {
+  const list = document.getElementById('restoreVersionList');
+  list.innerHTML = items.map((it, i) => `
+    <label class="restore-version-item">
+      <input type="radio" name="restoreVersion" value="${escapeHtml(it.value)}"${i === 0 ? ' checked' : ''}>
+      <span class="rv-text">
+        <span class="rv-main">${escapeHtml(it.main)}</span>
+        <span class="rv-sub">${escapeHtml(it.sub)}</span>
+      </span>
+    </label>`).join('');
+}
+
+function closeRestorePicker() {
+  document.getElementById('restorePickerModal').hidden = true;
+}
+
+async function confirmRestoreVersion() {
+  const sel = document.querySelector('input[name="restoreVersion"]:checked');
+  if (!sel) return;
+  const value = sel.value;
+  const labelEl = sel.closest('.restore-version-item').querySelector('.rv-main');
+  const label = labelEl ? labelEl.textContent : '所選版本';
+  closeRestorePicker();
+  if (value === 'latest') {
+    await cloudRestore({ manual: true });
+  } else {
+    await restoreFromSnapshot(value, label);
+  }
+}
+
+async function restoreFromSnapshot(fileId, label) {
+  setCloudBusy(true);
+  try {
+    const text = await driveDownloadText(fileId);
+    let data;
+    try { data = JSON.parse(text); } catch { showToast('版本資料格式錯誤'); return; }
+    if (!data || !Array.isArray(data.readings)) { showToast('版本資料格式錯誤'); return; }
+    if (!confirm(`確定要還原到「${label}」嗎？這會覆蓋此裝置目前所有紀錄與設定（該版本共 ${data.readings.length} 筆紀錄），並成為雲端最新版本。`)) return;
+    await applyBackupObject(data);
+    // Per the design decision: a restored older version becomes the new cloud
+    // latest, so the roll-back takes effect across devices. Forcing lastSyncedAt
+    // empty makes the upload treat the current main as "changed" and preserve it
+    // as the .prev safety copy before overwriting.
+    cloudState.lastSyncedAt = '';
+    saveCloudState();
+    await cloudBackupNow({});
+    updateCloudUI();
+    closeSettings();
+    showToast('已還原並更新雲端最新版本');
+  } catch (e) {
+    showToast('還原失敗：' + friendlyCloudErr(e));
   } finally {
     setCloudBusy(false);
   }
@@ -1977,7 +2156,12 @@ async function cloudCheckOnOpen() {
 document.getElementById('cloudConnectBtn').addEventListener('click', cloudConnect);
 document.getElementById('cloudDisconnectBtn').addEventListener('click', cloudDisconnect);
 document.getElementById('cloudBackupNowBtn').addEventListener('click', () => cloudBackupNow({ manual: true, interactive: true }));
-document.getElementById('cloudRestoreBtn').addEventListener('click', () => cloudRestore({ manual: true }));
+document.getElementById('cloudRestoreBtn').addEventListener('click', openRestorePicker);
+document.getElementById('closeRestorePickerBtn').addEventListener('click', closeRestorePicker);
+document.getElementById('confirmRestoreVersionBtn').addEventListener('click', confirmRestoreVersion);
+document.getElementById('restorePickerModal').addEventListener('click', (e) => {
+  if (e.target.id === 'restorePickerModal') closeRestorePicker();
+});
 updateCloudUI();
 
 // The periodic reminder now produces the report (which is then shared, saved

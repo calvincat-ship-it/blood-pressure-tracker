@@ -839,6 +839,52 @@ input:disabled {
   justify-content: flex-end;
 }
 
+.restore-version-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.restore-version-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.restore-version-item:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.restore-version-item input {
+  width: auto;
+  flex: none;
+  accent-color: var(--primary);
+}
+
+.rv-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rv-main {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.rv-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .settings-section-title {
   font-size: 14px;
   color: var(--primary-dark);

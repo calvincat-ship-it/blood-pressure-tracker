@@ -344,6 +344,20 @@
   </div>
 </div>
 
+<div id="restorePickerModal" class="modal-backdrop" hidden>
+  <div class="modal-sheet">
+    <div class="modal-header">
+      <h2>選擇還原版本</h2>
+      <button type="button" id="closeRestorePickerBtn" class="icon-btn" aria-label="關閉">✕</button>
+    </div>
+    <p class="settings-meta">預設還原至最新版本；也可選擇某一天的歷史版本。還原會覆蓋此裝置目前資料。</p>
+    <div id="restoreVersionList" class="restore-version-list"></div>
+    <div class="form-actions">
+      <button type="button" id="confirmRestoreVersionBtn" class="primary-btn">還原所選版本</button>
+    </div>
+  </div>
+</div>
+
 <div id="photoViewer" class="modal-backdrop photo-viewer" hidden>
   <div class="photo-viewer-inner">
     <button type="button" id="closePhotoViewerBtn" class="icon-btn" aria-label="關閉">✕</button>
