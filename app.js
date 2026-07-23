@@ -1,4 +1,4 @@
-const APP_VERSION = 'v24.01';
+const APP_VERSION = 'v24.02';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -658,6 +658,7 @@ const MANUAL_SECTIONS = [
       '雲端備份（Google Drive）：在設定中按「連結 Google 雲端備份」並用 Google 帳號登入後，App 會自動把所有紀錄、用藥與設定備份到你自己 Google 雲端硬碟的 App 專屬隱藏空間。',
       '雲端備份的資料只存在你自己的 Google 帳號，不會經過任何伺服器，開發者也看不到。',
       '連結後會顯示目前登入的 Google 帳號，方便確認備份到哪個帳號。',
+      '第一次連結授權後，之後開啟、重新整理或手動備份／還原通常都不需要再次授權（只要仍登入該 Google 帳號）。',
       '連結後每次變動都會自動備份；也可按「立即備份」或「從雲端還原」。換手機時，在新手機登入同一個 Google 帳號即可從雲端還原。',
       '多台裝置：開啟 App 時若偵測到雲端有較新的備份，會詢問是否還原到本機（採最後儲存者優先，並保留前一版以防萬一）。',
       '本機備份檔：也可將所有紀錄、設定與照片匯出成一個檔案離線保存；匯入還原會「完全覆蓋」目前資料，執行前會先確認。',
@@ -1676,17 +1677,24 @@ function initTokenClient() {
   });
 }
 
-// Get a valid access token. interactive=true may open the Google consent/login
-// popup; interactive=false only tries a silent refresh (used by background sync,
-// so it can quietly no-op when the Google session has lapsed).
-async function getAccessToken(interactive) {
+// Get a valid access token. A cached, unexpired token is reused with no UI at
+// all. promptMode maps to Google's token-client prompt:
+//   'none'  — background/silent: return a token without any UI, or fail cleanly
+//             if Google can't (session lapsed) — never opens a popup.
+//   ''      — user-gesture flows: silent when the consent is already remembered,
+//             otherwise shows the consent/login popup. After the first grant this
+//             stays silent, so reopen/refresh/manual backup never re-prompt.
+// We deliberately never force 'consent', which would re-show the screen every
+// time. Refresh tokens aren't available in this (no-backend) token model, so
+// 'none' + a remembered Google session is the seamless path.
+async function getAccessToken(promptMode = '') {
   await ensureGis();
   if (gisToken && gisToken.expiresAt - 60000 > Date.now()) return gisToken.access_token;
   if (!tokenClient) initTokenClient();
   return new Promise((resolve, reject) => {
     _tokResolve = resolve; _tokReject = reject;
     try {
-      tokenClient.requestAccessToken({ prompt: interactive ? 'consent' : '' });
+      tokenClient.requestAccessToken({ prompt: promptMode });
     } catch (e) {
       _tokResolve = _tokReject = null;
       reject(e);
@@ -1695,12 +1703,12 @@ async function getAccessToken(interactive) {
 }
 
 async function driveFetch(url, opts) {
-  let token = await getAccessToken(false);
+  let token = await getAccessToken('none');
   const build = (t) => ({ ...opts, headers: { ...(opts && opts.headers), Authorization: 'Bearer ' + t } });
   let res = await fetch(url, build(token));
   if (res.status === 401) { // token stale/revoked — force one silent refresh and retry
     gisToken = null;
-    token = await getAccessToken(false);
+    token = await getAccessToken('none');
     res = await fetch(url, build(token));
   }
   return res;
@@ -1836,7 +1844,7 @@ async function cloudBackupNow({ manual = false, interactive = false } = {}) {
   cloudBusy = true;
   setCloudBusy(true);
   try {
-    if (interactive) await getAccessToken(true);
+    if (interactive) await getAccessToken(''); // user gesture: silent if already granted, popup only if needed
     const bundle = await buildBackupObject();
     const updatedAt = new Date().toISOString();
     bundle.cloudUpdatedAt = updatedAt;
@@ -1869,7 +1877,7 @@ async function cloudBackupNow({ manual = false, interactive = false } = {}) {
 async function cloudRestore({ manual = false, confirmFirst = true, confirmMsg = '' } = {}) {
   setCloudBusy(true);
   try {
-    if (manual) await getAccessToken(true);
+    if (manual) await getAccessToken(''); // user gesture: silent if already granted, popup only if needed
     const fileId = await resolveMainFileId();
     if (!fileId) { if (manual) showToast('雲端沒有備份可還原'); return 'none'; }
     const text = await driveDownloadText(fileId);
@@ -1915,7 +1923,7 @@ async function cloudReconcileOnConnect() {
 async function cloudConnect() {
   setCloudBusy(true);
   try {
-    await getAccessToken(true); // interactive consent/login
+    await getAccessToken(''); // first link shows consent; a remembered grant stays silent
     cloudState.enabled = true;
     cloudState.email = await driveGetUserEmail();
     saveCloudState();

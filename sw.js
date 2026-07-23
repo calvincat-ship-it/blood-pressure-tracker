@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bp-tracker-v24.01';
+const CACHE_NAME = 'bp-tracker-v24.02';
 const ASSETS = [
   './',
   './index.html',
