@@ -1,4 +1,4 @@
-const APP_VERSION = 'v24';
+const APP_VERSION = 'v24.01';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -657,6 +657,7 @@ const MANUAL_SECTIONS = [
       '匯出 CSV：依所選範圍輸出試算表格式，方便自行分析。',
       '雲端備份（Google Drive）：在設定中按「連結 Google 雲端備份」並用 Google 帳號登入後，App 會自動把所有紀錄、用藥與設定備份到你自己 Google 雲端硬碟的 App 專屬隱藏空間。',
       '雲端備份的資料只存在你自己的 Google 帳號，不會經過任何伺服器，開發者也看不到。',
+      '連結後會顯示目前登入的 Google 帳號，方便確認備份到哪個帳號。',
       '連結後每次變動都會自動備份；也可按「立即備份」或「從雲端還原」。換手機時，在新手機登入同一個 Google 帳號即可從雲端還原。',
       '多台裝置：開啟 App 時若偵測到雲端有較新的備份，會詢問是否還原到本機（採最後儲存者優先，並保留前一版以防萬一）。',
       '本機備份檔：也可將所有紀錄、設定與照片匯出成一個檔案離線保存；匯入還原會「完全覆蓋」目前資料，執行前會先確認。',
@@ -1612,7 +1613,7 @@ let cloudBusy = false;
 let _tokResolve = null, _tokReject = null;
 
 function loadCloudState() {
-  const defaults = { enabled: false, fileId: '', prevFileId: '', lastSyncedAt: '', deviceId: '' };
+  const defaults = { enabled: false, email: '', fileId: '', prevFileId: '', lastSyncedAt: '', deviceId: '' };
   let s;
   try { s = { ...defaults, ...JSON.parse(localStorage.getItem(CLOUD_KEY)) }; }
   catch { s = { ...defaults }; }
@@ -1727,6 +1728,25 @@ async function driveDownloadText(fileId) {
   return res.text();
 }
 
+// The signed-in account's email — Drive's about.get returns it under the
+// existing drive.appdata scope, so no extra OAuth permission is needed.
+async function driveGetUserEmail() {
+  try {
+    const res = await driveFetch('https://www.googleapis.com/drive/v3/about?fields=user', { method: 'GET' });
+    if (!res.ok) return '';
+    const data = await res.json();
+    return (data.user && data.user.emailAddress) || '';
+  } catch { return ''; }
+}
+
+// Existing links (from before the account line was added) have no stored email;
+// fetch it quietly on open so the account still shows without a re-link.
+async function refreshCloudEmailIfMissing() {
+  if (!cloudState.enabled || cloudState.email) return;
+  const email = await driveGetUserEmail();
+  if (email) { cloudState.email = email; saveCloudState(); updateCloudUI(); }
+}
+
 async function driveUpload(fileId, name, contentStr, appProps) {
   const boundary = 'bpb' + Math.random().toString(16).slice(2);
   const metadata = fileId
@@ -1782,6 +1802,16 @@ function updateCloudUI() {
   const conn = document.getElementById('cloudConnectedBox');
   if (disc) disc.hidden = enabled;
   if (conn) conn.hidden = !enabled;
+  const account = document.getElementById('cloudAccount');
+  if (account) {
+    if (enabled && cloudState.email) {
+      account.hidden = false;
+      account.textContent = `帳號：${cloudState.email}`;
+    } else {
+      account.hidden = true;
+      account.textContent = '';
+    }
+  }
   const status = document.getElementById('cloudStatus');
   if (status) {
     if (!enabled) status.textContent = '';
@@ -1887,6 +1917,7 @@ async function cloudConnect() {
   try {
     await getAccessToken(true); // interactive consent/login
     cloudState.enabled = true;
+    cloudState.email = await driveGetUserEmail();
     saveCloudState();
     updateCloudUI();
     showToast('已連結 Google 雲端備份');
@@ -1907,6 +1938,7 @@ function cloudDisconnect() {
   } catch {}
   gisToken = null;
   cloudState.enabled = false;
+  cloudState.email = '';
   cloudState.fileId = '';
   cloudState.prevFileId = '';
   cloudState.lastSyncedAt = '';
@@ -2466,7 +2498,7 @@ maybeShowManualOnStart();
 
 // Cloud backup: check for a newer cloud copy on open and whenever the app
 // returns to the foreground (e.g. edited on another device meanwhile).
-if (cloudState.enabled) cloudCheckOnOpen();
+if (cloudState.enabled) { cloudCheckOnOpen(); refreshCloudEmailIfMissing(); }
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && cloudState.enabled) cloudCheckOnOpen();
 });
