@@ -1,4 +1,4 @@
-const APP_VERSION = 'v27';
+const APP_VERSION = 'v27.01';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -2250,25 +2250,29 @@ async function performClearData() {
   const clearsCloud = scope === 'cloud' || scope === 'both';
   const clearsLocal = scope === 'local' || scope === 'both';
 
-  const desc = scope === 'local' ? '此裝置的血壓與用藥紀錄（含照片）'
-    : scope === 'cloud' ? '雲端上所有備份與歷史版本'
-    : '此裝置與雲端上的所有血壓與用藥紀錄、備份與歷史版本';
-  // Second confirmation (the modal selection is the first).
-  const msg = `確定要清除${desc}嗎？\n\n此操作無法復原！`
-    + (clearsCloud ? '\n（雲端刪除需要 Google 帳號授權）' : '')
-    + '\n清除完成後會解除此裝置的雲端連結。';
-  if (!confirm(msg)) return;
-
-  closeClearDataModal();
   setCloudBusy(true);
   try {
+    // Cloud-inclusive deletions require a VISIBLE Google authorization. Do it
+    // FIRST — right on the button's user gesture — clearing any cached token and
+    // forcing prompt:'consent'. A silent '' token would reuse an existing grant
+    // and show no UI; and running auth AFTER a blocking confirm() can let the
+    // click's activation lapse, getting the consent popup blocked.
     if (clearsCloud) {
-      await getAccessToken(''); // Google authorization required for cloud deletion
-      await deleteAllCloudData();
+      gisToken = null;
+      await getAccessToken('consent');
     }
-    if (clearsLocal) {
-      await clearLocalRecords();
-    }
+
+    const desc = scope === 'local' ? '此裝置的血壓與用藥紀錄（含照片）'
+      : scope === 'cloud' ? '雲端上所有備份與歷史版本'
+      : '此裝置與雲端上的所有血壓與用藥紀錄、備份與歷史版本';
+    // Second confirmation (the modal selection is the first).
+    const msg = `確定要清除${desc}嗎？\n\n此操作無法復原！`
+      + '\n清除完成後會解除此裝置的雲端連結。';
+    if (!confirm(msg)) { showToast('已取消清除'); return; }
+
+    closeClearDataModal();
+    if (clearsCloud) await deleteAllCloudData();
+    if (clearsLocal) await clearLocalRecords();
     disconnectCloudSilently();
     showToast('已清除所選資料');
   } catch (e) {
