@@ -835,6 +835,12 @@ input:disabled {
   padding: 8px 10px;
 }
 
+.cloud-status.cloud-status-warn {
+  color: var(--stage1);
+  background: color-mix(in srgb, var(--stage1) 13%, var(--card-bg));
+  border-color: color-mix(in srgb, var(--stage1) 32%, var(--card-bg));
+}
+
 .cloud-secondary-row {
   align-items: center;
 }

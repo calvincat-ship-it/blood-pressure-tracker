@@ -1,4 +1,4 @@
-const APP_VERSION = 'v27.01';
+const APP_VERSION = 'v27.02';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -662,6 +662,7 @@ const MANUAL_SECTIONS = [
       '連結後會顯示目前登入的 Google 帳號，方便確認備份到哪個帳號。',
       '第一次連結授權後，之後開啟、重新整理或手動備份／還原通常都不需要再次授權（只要仍登入該 Google 帳號）。',
       '連結後每次變動都會自動備份；也可按「立即備份」或「從雲端還原」。換手機時，在新手機登入同一個 Google 帳號即可從雲端還原。',
+      '雲端備份區塊會顯示同步狀態：正常顯示「上次備份時間」；備份進行中顯示「備份中…」；若因手機休眠或登入逾時導致自動備份未成功，會顯示橘色「有變更尚未備份成功」提醒，此時按「立即備份」即可補上（回到 App 前景時也會自動重試）。',
       '歷史版本：連結雲端後，每天第一次新增血壓或用藥記錄時，會自動在雲端保留一份「當天之前」的歷史版本，最多保留 7 份（超過會自動刪除最舊一份）。',
       '按「從雲端還原」時會列出可還原的版本：預設選「最新版本（即時）」，也可改選某一天的歷史版本。還原較舊的版本後，該版本會成為雲端最新版本，並同步到其他裝置。',
       '多台裝置：開啟 App 時若偵測到雲端有較新的備份，會詢問是否還原到本機（採最後儲存者優先，並保留前一版以防萬一）。',
@@ -1620,7 +1621,7 @@ let cloudBusy = false;
 let _tokResolve = null, _tokReject = null;
 
 function loadCloudState() {
-  const defaults = { enabled: false, email: '', dataOwnerEmail: '', fileId: '', prevFileId: '', lastSyncedAt: '', lastSnapshotDate: '', deviceId: '' };
+  const defaults = { enabled: false, email: '', dataOwnerEmail: '', fileId: '', prevFileId: '', lastSyncedAt: '', lastSnapshotDate: '', pendingBackup: false, backupFailed: false, deviceId: '' };
   let s;
   try { s = { ...defaults, ...JSON.parse(localStorage.getItem(CLOUD_KEY)) }; }
   catch { s = { ...defaults }; }
@@ -1912,10 +1913,17 @@ function updateCloudUI() {
   }
   const status = document.getElementById('cloudStatus');
   if (status) {
-    if (!enabled) status.textContent = '';
-    else if (cloudState.lastSyncedAt) {
-      const d = new Date(cloudState.lastSyncedAt);
-      status.textContent = `已連結，上次備份：${d.toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })}`;
+    status.classList.remove('cloud-status-warn');
+    const last = cloudState.lastSyncedAt ? fmtDateTime(cloudState.lastSyncedAt) : '';
+    if (!enabled) {
+      status.textContent = '';
+    } else if (cloudState.backupFailed) {
+      status.textContent = `⚠ 有變更尚未備份成功${last ? `（上次成功：${last}）` : ''}，請按「立即備份」。`;
+      status.classList.add('cloud-status-warn');
+    } else if (cloudState.pendingBackup) {
+      status.textContent = `備份中…${last ? `（上次：${last}）` : ''}`;
+    } else if (last) {
+      status.textContent = `已連結，上次備份：${last}`;
     } else {
       status.textContent = '已連結，尚未備份';
     }
@@ -1924,6 +1932,7 @@ function updateCloudUI() {
 
 function scheduleCloudBackup() {
   if (!cloudState.enabled || suppressCloud) return;
+  if (!cloudState.pendingBackup) { cloudState.pendingBackup = true; saveCloudState(); updateCloudUI(); }
   clearTimeout(cloudTimer);
   cloudTimer = setTimeout(() => { cloudBackupNow({}); }, CLOUD_DEBOUNCE_MS);
 }
@@ -1953,11 +1962,19 @@ async function cloudBackupNow({ manual = false, interactive = false } = {}) {
     const result = await driveUpload(fileId, CLOUD_FILE_NAME, contentStr, { updatedAt, deviceId: cloudState.deviceId, count: String(readings.length) });
     cloudState.fileId = result.id;
     cloudState.lastSyncedAt = updatedAt;
+    cloudState.pendingBackup = false;
+    cloudState.backupFailed = false;
     if (cloudState.email) cloudState.dataOwnerEmail = cloudState.email; // this device's data now belongs to this account
     saveCloudState();
     updateCloudUI();
     if (manual) showToast('已備份到雲端');
   } catch (e) {
+    // The change is saved locally but not yet in the cloud. Mark it so the
+    // status shows an honest "not backed up" warning (instead of a stale last-
+    // backup time) and prompts the user to tap 立即備份.
+    cloudState.backupFailed = true;
+    saveCloudState();
+    updateCloudUI();
     if (manual || interactive) showToast('雲端備份失敗：' + friendlyCloudErr(e));
   } finally {
     cloudBusy = false;
@@ -1982,6 +1999,8 @@ async function cloudRestore({ manual = false, confirmFirst = true, confirmMsg = 
     await applyBackupObject(data);
     const meta = await driveGetMeta(fileId);
     cloudState.lastSyncedAt = (meta && meta.appProperties && meta.appProperties.updatedAt) || data.cloudUpdatedAt || cloudState.lastSyncedAt;
+    cloudState.pendingBackup = false;
+    cloudState.backupFailed = false;
     if (cloudState.email) cloudState.dataOwnerEmail = cloudState.email;
     saveCloudState();
     updateCloudUI();
@@ -2229,6 +2248,8 @@ function disconnectCloudSilently() {
   cloudState.prevFileId = '';
   cloudState.lastSyncedAt = '';
   cloudState.lastSnapshotDate = '';
+  cloudState.pendingBackup = false;
+  cloudState.backupFailed = false;
   saveCloudState();
   updateCloudUI();
 }
@@ -2295,6 +2316,8 @@ function cloudDisconnect() {
   cloudState.fileId = '';
   cloudState.prevFileId = '';
   cloudState.lastSyncedAt = '';
+  cloudState.pendingBackup = false;
+  cloudState.backupFailed = false;
   saveCloudState();
   updateCloudUI();
   showToast('已解除雲端連結');
@@ -2863,9 +2886,18 @@ maybeShowManualOnStart();
 
 // Cloud backup: check for a newer cloud copy on open and whenever the app
 // returns to the foreground (e.g. edited on another device meanwhile).
-if (cloudState.enabled) { cloudCheckOnOpen(); refreshCloudEmailIfMissing(); }
+if (cloudState.enabled) {
+  cloudCheckOnOpen();
+  refreshCloudEmailIfMissing();
+  // Retry a backup that a background (throttled/expired-token) attempt left
+  // unfinished, now that we're in the foreground.
+  if (cloudState.pendingBackup || cloudState.backupFailed) cloudBackupNow({});
+}
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && cloudState.enabled) cloudCheckOnOpen();
+  if (document.visibilityState === 'visible' && cloudState.enabled) {
+    cloudCheckOnOpen();
+    if (cloudState.pendingBackup || cloudState.backupFailed) cloudBackupNow({});
+  }
 });
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
