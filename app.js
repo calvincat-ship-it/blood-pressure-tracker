@@ -1,4 +1,4 @@
-const APP_VERSION = 'v28';
+const APP_VERSION = 'v28.01';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -689,6 +689,9 @@ const MANUAL_SECTIONS = [
 // manual). Key by APP_VERSION; keep only recent entries. Falls back to a generic
 // note if the running version has no explicit entry.
 const WHATS_NEW = {
+  'v28.01': [
+    '設定介面中的「定期報告提醒」已移到「📄 報告與匯出」分區，與報告相關功能放在一起更好找。',
+  ],
   'v28': [
     '版本更新時，開啟 App 只會顯示「本次更新內容」重點，不再每次跳出整份使用說明。',
     '設定介面改為可收合的大分區（提醒設定 / 報告與匯出 / 資料與雲端備份 / 使用說明），一進設定不用一直往下捲，點開需要的分區即可。',

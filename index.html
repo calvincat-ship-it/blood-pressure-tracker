@@ -191,33 +191,6 @@
       <details class="settings-group">
         <summary>⏰ 提醒設定</summary>
         <div class="settings-group-body">
-          <h3 class="settings-section-title">定期報告提醒</h3>
-          <p class="settings-meta">依設定的週期提醒你產生血壓報告，產出後可分享（Email、LINE 等）、儲存或列印。</p>
-          <label class="full">提醒週期
-            <select id="settingFrequency">
-              <option value="weekly">每週</option>
-              <option value="monthly">每月</option>
-              <option value="custom">固定天數</option>
-            </select>
-          </label>
-          <label class="full" id="customDaysRow" hidden>間隔天數
-            <input type="number" id="settingCustomDays" min="1" max="365" value="14">
-          </label>
-          <label class="full">預設收件 Email <span class="unit">選填</span>
-            <input type="email" id="settingEmail" placeholder="you@example.com">
-          </label>
-          <p class="settings-meta">僅在不支援分享選單的裝置（多為電腦）作為備援：會先下載 PDF，再開啟寄信視窗讓你附加檔案。</p>
-          <label class="checkbox-row">
-            <input type="checkbox" id="settingAutoClear">
-            報告產出後詢問是否清除舊紀錄
-          </label>
-          <p class="settings-meta" id="lastSentInfo"></p>
-          <div class="form-actions">
-            <button type="button" id="sendNowBtn" class="secondary-btn">立即產生報告</button>
-          </div>
-
-          <hr class="settings-divider">
-
           <h3 class="settings-section-title">量測提醒通知</h3>
           <label class="checkbox-row">
             <input type="checkbox" id="settingReminderEnabled">
@@ -284,6 +257,34 @@
       <details class="settings-group">
         <summary>📄 報告與匯出</summary>
         <div class="settings-group-body">
+          <h3 class="settings-section-title">定期報告提醒</h3>
+          <p class="settings-meta">依設定的週期提醒你產生血壓報告，產出後可分享（Email、LINE 等）、儲存或列印。</p>
+          <label class="full">提醒週期
+            <select id="settingFrequency">
+              <option value="weekly">每週</option>
+              <option value="monthly">每月</option>
+              <option value="custom">固定天數</option>
+            </select>
+          </label>
+          <label class="full" id="customDaysRow" hidden>間隔天數
+            <input type="number" id="settingCustomDays" min="1" max="365" value="14">
+          </label>
+          <label class="full">預設收件 Email <span class="unit">選填</span>
+            <input type="email" id="settingEmail" placeholder="you@example.com">
+          </label>
+          <p class="settings-meta">僅在不支援分享選單的裝置（多為電腦）作為備援：會先下載 PDF，再開啟寄信視窗讓你附加檔案。</p>
+          <label class="checkbox-row">
+            <input type="checkbox" id="settingAutoClear">
+            報告產出後詢問是否清除舊紀錄
+          </label>
+          <p class="settings-meta" id="lastSentInfo"></p>
+          <div class="form-actions">
+            <button type="button" id="sendNowBtn" class="secondary-btn">立即產生報告</button>
+          </div>
+
+          <hr class="settings-divider">
+
+          <h3 class="settings-section-title">產生報告與匯出</h3>
           <label class="full">報告 / 匯出範圍
             <select id="exportRange">
               <option value="all">全部</option>
