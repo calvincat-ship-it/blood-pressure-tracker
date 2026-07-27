@@ -1,8 +1,13 @@
-const APP_VERSION = 'v28.01';
+const APP_VERSION = 'v28.02';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
 const PHOTO_STORE = 'photos';
+// Cap on how many readings keep an attached photo: only the newest MAX_PHOTOS
+// (by reading date/time) retain their photo; older photos are auto-deleted from
+// IndexedDB (and therefore from every backup) to keep storage small. The record
+// numbers are always kept — only the image is dropped.
+const MAX_PHOTOS = 30;
 
 // Cloud backup constants — declared at the top because loadCloudState() (called
 // with the other top-level state below) reads CLOUD_KEY; a const referenced
@@ -411,6 +416,7 @@ form.addEventListener('submit', async (e) => {
     readings.push(entry);
     showToast('已新增紀錄');
   }
+  await enforcePhotoLimit(); // keep only the newest MAX_PHOTOS photos on device + in backups
   saveReadings(readings);
   resetForm();
   renderAll();
@@ -601,6 +607,7 @@ const MANUAL_SECTIONS = [
       '必填：收縮壓、舒張壓；心跳為選填。',
       '若收縮壓小於或等於舒張壓，系統會擋下並提示，避免數值填反。',
       '「更多選項」可展開填寫時段（起床／睡前／飯後／運動後）、備註，以及拍攝照片。',
+      '為節省儲存空間，照片僅保留最新的 30 張；超過後較舊的照片會自動刪除，該筆紀錄的血壓數值與備註仍完整保留，只有照片會被移除（本機與雲端備份一致）。',
     ],
   },
   {
@@ -668,7 +675,8 @@ const MANUAL_SECTIONS = [
       '按「從雲端還原」時會列出可還原的版本：預設選「最新版本（即時）」，也可改選某一天的歷史版本。還原較舊的版本後，該版本會成為雲端最新版本，並同步到其他裝置。',
       '多台裝置：開啟 App 時若偵測到雲端有較新的備份，會詢問是否還原到本機（採最後儲存者優先，並保留前一版以防萬一）。',
       '更換帳號：按「更換帳號」（或先解除連結再連結另一個 Google 帳號）時，App 會先清除此裝置上前一個帳號的所有資料，再改用新帳號的雲端資料還原，避免不同帳號的資料混在一起。前一個帳號的雲端備份仍會保留，之後可再切回。',
-      '本機備份檔：也可將所有紀錄、設定與照片匯出成一個檔案離線保存；匯入還原會「完全覆蓋」目前資料，執行前會先確認。',
+      '照片保留上限：為避免占用過多空間，照片（本機與雲端備份）僅保留最新的 30 張，較舊的照片會自動刪除，僅保留該筆紀錄的血壓數值與備註。',
+      '本機備份檔：也可將所有紀錄、設定與照片匯出成一個檔案離線保存；匯入還原會「完全覆蓋」目前資料，執行前會先確認（還原時同樣只會保留最新 30 張照片）。',
       '清除歷史資料：設定中提供「清除歷史資料」，可選擇僅清除本機資料、僅清除雲端備份資料、或兩者都清除。此操作無法復原，選擇後會再次確認；清除雲端資料需 Google 帳號授權，清除完成後會解除此裝置的雲端連結。',
       '更換手機或瀏覽器前，請先完成雲端備份或匯出本機備份檔。',
     ],
@@ -689,6 +697,10 @@ const MANUAL_SECTIONS = [
 // manual). Key by APP_VERSION; keep only recent entries. Falls back to a generic
 // note if the running version has no explicit entry.
 const WHATS_NEW = {
+  'v28.02': [
+    '為節省儲存空間，照片現在僅保留最新的 30 張；超過後較舊的照片會自動刪除，該筆紀錄的血壓數值與備註仍完整保留，只有照片會被移除。',
+    '此規則同時套用於手機本機與雲端／本機備份，讓備份檔不會因照片過多而變得龐大。',
+  ],
   'v28.01': [
     '設定介面中的「定期報告提醒」已移到「📄 報告與匯出」分區，與報告相關功能放在一起更好找。',
   ],
@@ -1568,6 +1580,26 @@ async function buildBackupObject() {
   };
 }
 
+// The set of photoIds to KEEP: the newest MAX_PHOTOS readings that have a
+// photo, by date/time. Everything else is pruned.
+function computeKeepPhotoIds(list) {
+  const withPhoto = sortByDateTime(list.filter(r => r && r.photoId));
+  return new Set(withPhoto.slice(-MAX_PHOTOS).map(r => r.photoId));
+}
+
+// Enforce the photo cap on the live data: delete photos beyond the newest
+// MAX_PHOTOS from IndexedDB and null out their photoId. Mutates the global
+// `readings` in place; returns true if anything changed. Callers persist +
+// re-render as appropriate (kept side-effect-free so it can run pre-save).
+async function enforcePhotoLimit() {
+  const keep = computeKeepPhotoIds(readings);
+  const stale = readings.filter(r => r.photoId && !keep.has(r.photoId));
+  if (stale.length === 0) return false;
+  await deletePhotos(stale.map(r => r.photoId));
+  stale.forEach(r => { r.photoId = null; });
+  return true;
+}
+
 // Overwrite all local data from a backup bundle. Callers are responsible for
 // confirming with the user first. Suppresses cloud auto-backup while applying
 // so a restore doesn't immediately upload back over the source.
@@ -1577,15 +1609,23 @@ async function applyBackupObject(data) {
     const existingPhotoIds = readings.map(r => r.photoId).filter(Boolean);
     await deletePhotos(existingPhotoIds);
 
+    // Honour the photo cap on restore too: only write the newest MAX_PHOTOS
+    // photos and drop the photoId on older readings, so restoring a large (or
+    // pre-cap) backup can't blow past the limit. Record numbers are kept.
+    const restored = data.readings || [];
+    const keep = computeKeepPhotoIds(restored);
+    restored.forEach(r => { if (r.photoId && !keep.has(r.photoId)) r.photoId = null; });
+
     const photos = data.photos || {};
     for (const [id, dataUrl] of Object.entries(photos)) {
+      if (!keep.has(id)) continue;
       try {
         const blob = await dataUrlToBlob(dataUrl);
         await savePhoto(id, blob);
       } catch {}
     }
 
-    readings = data.readings;
+    readings = restored;
     saveReadings(readings);
     medLogs = (data.medLogs && typeof data.medLogs === 'object') ? data.medLogs : {};
     saveMedLogs(medLogs);
@@ -2939,6 +2979,13 @@ resetForm();
 renderAll();
 document.getElementById('appVersion').textContent = `版本 ${APP_VERSION}`;
 maybeShowManualOnStart();
+
+// Prune photos beyond the newest MAX_PHOTOS on startup too, so data that
+// predates this cap (or arrived via an old backup) gets cleaned up and the
+// change propagates to the cloud backup.
+enforcePhotoLimit().then((changed) => {
+  if (changed) { saveReadings(readings); renderAll(); }
+});
 
 // Cloud backup: check for a newer cloud copy on open and whenever the app
 // returns to the foreground (e.g. edited on another device meanwhile).
