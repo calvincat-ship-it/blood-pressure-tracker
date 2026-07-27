@@ -188,169 +188,181 @@
       <button type="button" id="closeSettingsBtn" class="icon-btn" aria-label="關閉">✕</button>
     </div>
     <form id="settingsForm">
-      <h3 class="settings-section-title">定期報告提醒</h3>
-      <p class="settings-meta">依設定的週期提醒你產生血壓報告，產出後可分享（Email、LINE 等）、儲存或列印。</p>
-      <label class="full">提醒週期
-        <select id="settingFrequency">
-          <option value="weekly">每週</option>
-          <option value="monthly">每月</option>
-          <option value="custom">固定天數</option>
-        </select>
-      </label>
-      <label class="full" id="customDaysRow" hidden>間隔天數
-        <input type="number" id="settingCustomDays" min="1" max="365" value="14">
-      </label>
-      <label class="full">預設收件 Email <span class="unit">選填</span>
-        <input type="email" id="settingEmail" placeholder="you@example.com">
-      </label>
-      <p class="settings-meta">僅在不支援分享選單的裝置（多為電腦）作為備援：會先下載 PDF，再開啟寄信視窗讓你附加檔案。</p>
-      <label class="checkbox-row">
-        <input type="checkbox" id="settingAutoClear">
-        報告產出後詢問是否清除舊紀錄
-      </label>
-      <p class="settings-meta" id="lastSentInfo"></p>
-      <div class="form-actions">
-        <button type="button" id="sendNowBtn" class="secondary-btn">立即產生報告</button>
-      </div>
+      <details class="settings-group">
+        <summary>⏰ 提醒設定</summary>
+        <div class="settings-group-body">
+          <h3 class="settings-section-title">定期報告提醒</h3>
+          <p class="settings-meta">依設定的週期提醒你產生血壓報告，產出後可分享（Email、LINE 等）、儲存或列印。</p>
+          <label class="full">提醒週期
+            <select id="settingFrequency">
+              <option value="weekly">每週</option>
+              <option value="monthly">每月</option>
+              <option value="custom">固定天數</option>
+            </select>
+          </label>
+          <label class="full" id="customDaysRow" hidden>間隔天數
+            <input type="number" id="settingCustomDays" min="1" max="365" value="14">
+          </label>
+          <label class="full">預設收件 Email <span class="unit">選填</span>
+            <input type="email" id="settingEmail" placeholder="you@example.com">
+          </label>
+          <p class="settings-meta">僅在不支援分享選單的裝置（多為電腦）作為備援：會先下載 PDF，再開啟寄信視窗讓你附加檔案。</p>
+          <label class="checkbox-row">
+            <input type="checkbox" id="settingAutoClear">
+            報告產出後詢問是否清除舊紀錄
+          </label>
+          <p class="settings-meta" id="lastSentInfo"></p>
+          <div class="form-actions">
+            <button type="button" id="sendNowBtn" class="secondary-btn">立即產生報告</button>
+          </div>
 
-      <hr class="settings-divider">
+          <hr class="settings-divider">
 
-      <h3 class="settings-section-title">量測提醒通知</h3>
-      <label class="checkbox-row">
-        <input type="checkbox" id="settingReminderEnabled">
-        啟用量測提醒通知（每天最多 3 次）
-      </label>
-      <div class="form-row three">
-        <label>提醒時間 1
-          <input type="time" id="reminderTime1">
-        </label>
-        <label>提醒時間 2
-          <input type="time" id="reminderTime2">
-        </label>
-        <label>提醒時間 3
-          <input type="time" id="reminderTime3">
-        </label>
-      </div>
-      <p class="settings-meta">需要允許通知權限，且此頁面保持開啟（可切到背景分頁）才能準時提醒；App 完全關閉時無法收到通知。</p>
+          <h3 class="settings-section-title">量測提醒通知</h3>
+          <label class="checkbox-row">
+            <input type="checkbox" id="settingReminderEnabled">
+            啟用量測提醒通知（每天最多 3 次）
+          </label>
+          <div class="form-row three">
+            <label>提醒時間 1
+              <input type="time" id="reminderTime1">
+            </label>
+            <label>提醒時間 2
+              <input type="time" id="reminderTime2">
+            </label>
+            <label>提醒時間 3
+              <input type="time" id="reminderTime3">
+            </label>
+          </div>
+          <p class="settings-meta">需要允許通知權限，且此頁面保持開啟（可切到背景分頁）才能準時提醒；App 完全關閉時無法收到通知。</p>
 
-      <hr class="settings-divider">
+          <hr class="settings-divider">
 
-      <h3 class="settings-section-title">高血壓服藥提醒</h3>
-      <label class="checkbox-row">
-        <input type="checkbox" id="settingHighBpAlertEnabled">
-        每日第一次出現高血壓紀錄時提醒服藥
-      </label>
-      <label class="full">判定方式
-        <select id="highBpAlertMode">
-          <option value="auto">自動（採用血壓分級標準）</option>
-          <option value="custom">自行設定門檻</option>
-        </select>
-      </label>
-      <div class="form-row" id="highBpCustomRow" hidden>
-        <label>收縮壓門檻 <span class="unit">mmHg</span>
-          <input type="number" id="highBpCustomSystolic" min="80" max="260" value="130">
-        </label>
-        <label>舒張壓門檻 <span class="unit">mmHg</span>
-          <input type="number" id="highBpCustomDiastolic" min="50" max="200" value="80">
-        </label>
-      </div>
-      <p class="settings-meta">自動模式採用「第一期高血壓」以上（收縮壓 ≥130 或舒張壓 ≥80）作為判定標準。</p>
+          <h3 class="settings-section-title">高血壓服藥提醒</h3>
+          <label class="checkbox-row">
+            <input type="checkbox" id="settingHighBpAlertEnabled">
+            每日第一次出現高血壓紀錄時提醒服藥
+          </label>
+          <label class="full">判定方式
+            <select id="highBpAlertMode">
+              <option value="auto">自動（採用血壓分級標準）</option>
+              <option value="custom">自行設定門檻</option>
+            </select>
+          </label>
+          <div class="form-row" id="highBpCustomRow" hidden>
+            <label>收縮壓門檻 <span class="unit">mmHg</span>
+              <input type="number" id="highBpCustomSystolic" min="80" max="260" value="130">
+            </label>
+            <label>舒張壓門檻 <span class="unit">mmHg</span>
+              <input type="number" id="highBpCustomDiastolic" min="50" max="200" value="80">
+            </label>
+          </div>
+          <p class="settings-meta">自動模式採用「第一期高血壓」以上（收縮壓 ≥130 或舒張壓 ≥80）作為判定標準。</p>
 
-      <hr class="settings-divider">
+          <hr class="settings-divider">
 
-      <h3 class="settings-section-title">每日用藥提醒</h3>
-      <label class="checkbox-row">
-        <input type="checkbox" id="settingMedReminderEnabled">
-        啟用每日用藥提醒
-      </label>
-      <div class="form-row three">
-        <label>用藥時間
-          <input type="time" id="settingMedReminderTime">
-        </label>
-        <label>逾時提醒 <span class="unit">分鐘</span>
-          <input type="number" id="settingMedReminderOverdue" min="0" max="720" value="30">
-        </label>
-        <label>提醒間隔 <span class="unit">分鐘</span>
-          <input type="number" id="settingMedReminderRepeat" min="5" max="720" value="30">
-        </label>
-      </div>
-      <p class="settings-meta">超過「用藥時間＋逾時分鐘」仍未記錄服藥時開始提醒，並依提醒間隔重複；一旦按下「記錄現在服藥」即自動停止，隔天再重新判斷。此頁面需保持開啟（可切到背景分頁）才能提醒。</p>
-
-      <hr class="settings-divider">
-
-      <h3 class="settings-section-title">報告與匯出</h3>
-      <label class="full">報告 / 匯出範圍
-        <select id="exportRange">
-          <option value="all">全部</option>
-          <option value="30">最近 30 天</option>
-          <option value="custom">自訂日期</option>
-        </select>
-      </label>
-      <div class="form-row" id="exportCustomRow" hidden>
-        <label>起始日期
-          <input type="date" id="exportStart">
-        </label>
-        <label>結束日期
-          <input type="date" id="exportEnd">
-        </label>
-      </div>
-      <div class="form-actions">
-        <button type="button" id="reportBtn" class="primary-btn">📄 產生報告</button>
-        <button type="button" id="exportCsvBtn" class="secondary-btn">⬇ 匯出 CSV</button>
-      </div>
-      <p class="settings-meta">皆依上方範圍。產生報告後可選擇分享（Email / LINE / 其他）、儲存 PDF 或列印。</p>
-
-      <hr class="settings-divider">
-
-      <h3 class="settings-section-title">使用說明</h3>
-      <div class="form-actions">
-        <button type="button" id="openManualBtn" class="secondary-btn">📖 開啟使用說明</button>
-      </div>
-      <label class="checkbox-row">
-        <input type="checkbox" id="settingManualOnOpen">
-        每次開啟 App 時主動顯示使用說明
-      </label>
-      <p class="settings-meta">版本更新後會自動顯示一次使用說明，之後依上方勾選為準。說明內含各功能操作方式，並可儲存或分享 PDF。</p>
-
-      <hr class="settings-divider">
-
-      <h3 class="settings-section-title">☁️ 雲端備份（Google Drive）</h3>
-      <p class="settings-meta">用 Google 帳號登入後，會自動把所有紀錄、用藥與設定備份到你自己 Google 雲端硬碟的 App 專屬空間；換手機或另一台裝置登入即可還原。資料只存在你的 Google 帳號，不會經過任何伺服器。</p>
-      <div id="cloudDisconnectedBox">
-        <div class="form-actions">
-          <button type="button" id="cloudConnectBtn" class="primary-btn">🔗 連結 Google 雲端備份</button>
+          <h3 class="settings-section-title">每日用藥提醒</h3>
+          <label class="checkbox-row">
+            <input type="checkbox" id="settingMedReminderEnabled">
+            啟用每日用藥提醒
+          </label>
+          <div class="form-row three">
+            <label>用藥時間
+              <input type="time" id="settingMedReminderTime">
+            </label>
+            <label>逾時提醒 <span class="unit">分鐘</span>
+              <input type="number" id="settingMedReminderOverdue" min="0" max="720" value="30">
+            </label>
+            <label>提醒間隔 <span class="unit">分鐘</span>
+              <input type="number" id="settingMedReminderRepeat" min="5" max="720" value="30">
+            </label>
+          </div>
+          <p class="settings-meta">超過「用藥時間＋逾時分鐘」仍未記錄服藥時開始提醒，並依提醒間隔重複；一旦按下「記錄現在服藥」即自動停止，隔天再重新判斷。此頁面需保持開啟（可切到背景分頁）才能提醒。</p>
         </div>
-      </div>
-      <div id="cloudConnectedBox" hidden>
-        <p class="cloud-account" id="cloudAccount" hidden></p>
-        <p class="settings-meta cloud-status" id="cloudStatus"></p>
-        <div class="form-actions">
-          <button type="button" id="cloudBackupNowBtn" class="secondary-btn">⬆ 立即備份</button>
-          <button type="button" id="cloudRestoreBtn" class="secondary-btn">⬇ 從雲端還原</button>
+      </details>
+
+      <details class="settings-group">
+        <summary>📄 報告與匯出</summary>
+        <div class="settings-group-body">
+          <label class="full">報告 / 匯出範圍
+            <select id="exportRange">
+              <option value="all">全部</option>
+              <option value="30">最近 30 天</option>
+              <option value="custom">自訂日期</option>
+            </select>
+          </label>
+          <div class="form-row" id="exportCustomRow" hidden>
+            <label>起始日期
+              <input type="date" id="exportStart">
+            </label>
+            <label>結束日期
+              <input type="date" id="exportEnd">
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="button" id="reportBtn" class="primary-btn">📄 產生報告</button>
+            <button type="button" id="exportCsvBtn" class="secondary-btn">⬇ 匯出 CSV</button>
+          </div>
+          <p class="settings-meta">皆依上方範圍。產生報告後可選擇分享（Email / LINE / 其他）、儲存 PDF 或列印。</p>
         </div>
-        <div class="form-actions cloud-secondary-row">
-          <button type="button" id="cloudSwitchBtn" class="secondary-btn">🔄 更換帳號</button>
-          <button type="button" id="cloudDisconnectBtn" class="text-danger-btn">解除連結</button>
+      </details>
+
+      <details class="settings-group">
+        <summary>☁️ 資料與雲端備份</summary>
+        <div class="settings-group-body">
+          <h3 class="settings-section-title">雲端備份（Google Drive）</h3>
+          <p class="settings-meta">用 Google 帳號登入後，會自動把所有紀錄、用藥與設定備份到你自己 Google 雲端硬碟的 App 專屬空間；換手機或另一台裝置登入即可還原。資料只存在你的 Google 帳號，不會經過任何伺服器。</p>
+          <div id="cloudDisconnectedBox">
+            <div class="form-actions">
+              <button type="button" id="cloudConnectBtn" class="primary-btn">🔗 連結 Google 雲端備份</button>
+            </div>
+          </div>
+          <div id="cloudConnectedBox" hidden>
+            <p class="cloud-account" id="cloudAccount" hidden></p>
+            <p class="settings-meta cloud-status" id="cloudStatus"></p>
+            <div class="form-actions">
+              <button type="button" id="cloudBackupNowBtn" class="secondary-btn">⬆ 立即備份</button>
+              <button type="button" id="cloudRestoreBtn" class="secondary-btn">⬇ 從雲端還原</button>
+            </div>
+            <div class="form-actions cloud-secondary-row">
+              <button type="button" id="cloudSwitchBtn" class="secondary-btn">🔄 更換帳號</button>
+              <button type="button" id="cloudDisconnectBtn" class="text-danger-btn">解除連結</button>
+            </div>
+          </div>
+
+          <hr class="settings-divider">
+
+          <h3 class="settings-section-title">資料備份（本機檔案）</h3>
+          <p class="settings-meta">將所有紀錄、設定與照片打包成一個備份檔存到手機，可離線保存或自行轉存。</p>
+          <div class="form-actions">
+            <button type="button" id="exportBackupBtn" class="secondary-btn">匯出備份檔</button>
+            <button type="button" id="importBackupBtn" class="secondary-btn">匯入備份檔還原</button>
+            <input type="file" accept="application/json" id="importBackupInput" hidden>
+          </div>
+
+          <hr class="settings-divider">
+
+          <h3 class="settings-section-title">清除歷史資料</h3>
+          <p class="settings-meta">清除本機或雲端上的血壓與用藥紀錄。此操作無法復原，選擇後會再次確認；刪除雲端資料需 Google 帳號授權。</p>
+          <div class="form-actions">
+            <button type="button" id="openClearDataBtn" class="secondary-btn">🗑 清除歷史資料</button>
+          </div>
         </div>
-      </div>
+      </details>
 
-      <hr class="settings-divider">
-
-      <h3 class="settings-section-title">資料備份（本機檔案）</h3>
-      <p class="settings-meta">將所有紀錄、設定與照片打包成一個備份檔存到手機，可離線保存或自行轉存。</p>
-      <div class="form-actions">
-        <button type="button" id="exportBackupBtn" class="secondary-btn">匯出備份檔</button>
-        <button type="button" id="importBackupBtn" class="secondary-btn">匯入備份檔還原</button>
-        <input type="file" accept="application/json" id="importBackupInput" hidden>
-      </div>
-
-      <hr class="settings-divider">
-
-      <h3 class="settings-section-title">清除歷史資料</h3>
-      <p class="settings-meta">清除本機或雲端上的血壓與用藥紀錄。此操作無法復原，選擇後會再次確認；刪除雲端資料需 Google 帳號授權。</p>
-      <div class="form-actions">
-        <button type="button" id="openClearDataBtn" class="secondary-btn">🗑 清除歷史資料</button>
-      </div>
+      <details class="settings-group">
+        <summary>📖 使用說明</summary>
+        <div class="settings-group-body">
+          <div class="form-actions">
+            <button type="button" id="openManualBtn" class="secondary-btn">📖 開啟完整使用說明</button>
+          </div>
+          <label class="checkbox-row">
+            <input type="checkbox" id="settingManualOnOpen">
+            每次開啟 App 時主動顯示使用說明
+          </label>
+          <p class="settings-meta">版本更新後會自動顯示一次「本次更新內容」摘要；勾選上方則每次開啟都顯示完整說明。說明內含各功能操作方式，並可儲存或分享 PDF。</p>
+        </div>
+      </details>
 
       <div class="form-actions">
         <button type="submit" class="primary-btn">儲存設定</button>
@@ -434,6 +446,21 @@
       每次開啟 App 時主動顯示使用說明
     </label>
     <div id="manualContent" class="report-content"></div>
+  </div>
+</div>
+
+<div id="whatsNewModal" class="modal-backdrop" hidden>
+  <div class="modal-sheet">
+    <div class="modal-header">
+      <h2>本次更新內容</h2>
+      <button type="button" id="closeWhatsNewBtn" class="icon-btn" aria-label="關閉">✕</button>
+    </div>
+    <p class="settings-meta" id="whatsNewVersion"></p>
+    <ul id="whatsNewList" class="whats-new-list"></ul>
+    <p class="settings-meta whats-new-footer">完整版使用說明請到【設定】介面點選觀看。</p>
+    <div class="form-actions">
+      <button type="button" id="whatsNewOkBtn" class="primary-btn">我知道了</button>
+    </div>
   </div>
 </div>
 

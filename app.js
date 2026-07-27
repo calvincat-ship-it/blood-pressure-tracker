@@ -1,4 +1,4 @@
-const APP_VERSION = 'v27.03';
+const APP_VERSION = 'v28';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -679,11 +679,22 @@ const MANUAL_SECTIONS = [
       '所有資料只存在您自己的手機（localStorage 與 IndexedDB），沒有帳號，也不會上傳到任何伺服器。',
       '清除瀏覽器資料會一併刪除紀錄，請定期備份。',
       '設定頁最下方會顯示目前版本，可確認是否已更新到最新版。',
-      '版本更新後，本使用說明會自動顯示一次；之後是否顯示，依您在設定中的勾選為準。',
+      '版本更新後，開啟 App 會自動顯示一次「本次更新內容」摘要；完整使用說明可隨時到設定中的「開啟完整使用說明」查看。若勾選設定中的「每次開啟時主動顯示使用說明」，則每次開啟都會顯示完整說明。',
       '介面會自動跟隨手機的淺色／深色模式：手機切到深色時，App 也會自動變成深色配色，不需另外設定。',
     ],
   },
 ];
+
+// Short per-version highlights shown once after an update (instead of the full
+// manual). Key by APP_VERSION; keep only recent entries. Falls back to a generic
+// note if the running version has no explicit entry.
+const WHATS_NEW = {
+  'v28': [
+    '版本更新時，開啟 App 只會顯示「本次更新內容」重點，不再每次跳出整份使用說明。',
+    '設定介面改為可收合的大分區（提醒設定 / 報告與匯出 / 資料與雲端備份 / 使用說明），一進設定不用一直往下捲，點開需要的分區即可。',
+    '首頁在偵測到雲端自動備份失敗時，會直接顯示警示卡片與「立即備份」按鈕，不必進設定。',
+  ],
+};
 
 const MANUAL_CSS = `
 .mn { color:#000; font-size:13px; line-height:1.65;
@@ -1084,11 +1095,39 @@ document.getElementById('saveManualBtn').addEventListener('click', saveManualPdf
 document.getElementById('printManualBtn').addEventListener('click', printManual);
 document.getElementById('manualOnOpenInline').addEventListener('change', (e) => setManualOnOpen(e.target.checked));
 
-// Force the manual once after a version update, then fall back to the user's
-// own preference on later launches.
+// "What's new" is a lightweight, version-specific highlights view shown once
+// after an update — replacing the old habit of forcing the entire manual. The
+// full manual stays available via 設定 → 開啟完整使用說明.
+function openWhatsNew() {
+  const notes = WHATS_NEW[APP_VERSION] || ['本次為功能與介面優化更新。'];
+  document.getElementById('whatsNewVersion').textContent = `版本 ${APP_VERSION}`;
+  document.getElementById('whatsNewList').innerHTML =
+    notes.map(n => `<li>${escapeHtml(n)}</li>`).join('');
+  closeSettings();
+  document.getElementById('whatsNewModal').hidden = false;
+}
+
+// Record the version as seen only on close (same reasoning as closeManual: a
+// reload from the SW auto-update must not swallow the single forced showing).
+function closeWhatsNew() {
+  document.getElementById('whatsNewModal').hidden = true;
+  if (settings.manualSeenVersion !== APP_VERSION) {
+    settings.manualSeenVersion = APP_VERSION;
+    saveSettings(settings);
+  }
+}
+
+document.getElementById('closeWhatsNewBtn').addEventListener('click', closeWhatsNew);
+document.getElementById('whatsNewOkBtn').addEventListener('click', closeWhatsNew);
+document.getElementById('whatsNewModal').addEventListener('click', (e) => {
+  if (e.target.id === 'whatsNewModal') closeWhatsNew();
+});
+
+// After a version update, show the compact "本次更新內容" once; otherwise fall
+// back to the user's own "show full manual on open" preference.
 function maybeShowManualOnStart() {
   if (settings.manualSeenVersion !== APP_VERSION) {
-    openManual(true);   // closeManual() records the version once it is dismissed
+    openWhatsNew();   // closeWhatsNew() records the version once it is dismissed
     return;
   }
   if (settings.showManualOnOpen) openManual(false);
