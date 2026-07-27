@@ -1,4 +1,4 @@
-const APP_VERSION = 'v27.02';
+const APP_VERSION = 'v27.03';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -663,6 +663,7 @@ const MANUAL_SECTIONS = [
       '第一次連結授權後，之後開啟、重新整理或手動備份／還原通常都不需要再次授權（只要仍登入該 Google 帳號）。',
       '連結後每次變動都會自動備份；也可按「立即備份」或「從雲端還原」。換手機時，在新手機登入同一個 Google 帳號即可從雲端還原。',
       '雲端備份區塊會顯示同步狀態：正常顯示「上次備份時間」；備份進行中顯示「備份中…」；若因手機休眠或登入逾時導致自動備份未成功，會顯示橘色「有變更尚未備份成功」提醒，此時按「立即備份」即可補上（回到 App 前景時也會自動重試）。',
+      '當偵測到自動備份失敗時，首頁上方也會直接出現一張橘色警示卡片，卡片上就有「立即備份」按鈕，不必進入設定即可補上備份；備份成功後卡片會自動消失。',
       '歷史版本：連結雲端後，每天第一次新增血壓或用藥記錄時，會自動在雲端保留一份「當天之前」的歷史版本，最多保留 7 份（超過會自動刪除最舊一份）。',
       '按「從雲端還原」時會列出可還原的版本：預設選「最新版本（即時）」，也可改選某一天的歷史版本。還原較舊的版本後，該版本會成為雲端最新版本，並同步到其他裝置。',
       '多台裝置：開啟 App 時若偵測到雲端有較新的備份，會詢問是否還原到本機（採最後儲存者優先，並保留前一版以防萬一）。',
@@ -1889,7 +1890,7 @@ function maybeDailySnapshot() {
 }
 
 function setCloudBusy(b) {
-  ['cloudConnectBtn', 'cloudBackupNowBtn', 'cloudRestoreBtn', 'cloudSwitchBtn', 'cloudDisconnectBtn'].forEach(id => {
+  ['cloudConnectBtn', 'cloudBackupNowBtn', 'cloudRestoreBtn', 'cloudSwitchBtn', 'cloudDisconnectBtn', 'cloudAlertBackupBtn'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = b;
   });
@@ -1926,6 +1927,18 @@ function updateCloudUI() {
       status.textContent = `已連結，上次備份：${last}`;
     } else {
       status.textContent = '已連結，尚未備份';
+    }
+  }
+  // Surface a backup-failure warning on the homepage so the user can retry
+  // without opening 設定 (mirrors the amber warning inside the cloud section).
+  const alertCard = document.getElementById('cloudAlertCard');
+  if (alertCard) {
+    const showAlert = enabled && cloudState.backupFailed;
+    alertCard.hidden = !showAlert;
+    if (showAlert) {
+      const last = cloudState.lastSyncedAt ? fmtDateTime(cloudState.lastSyncedAt) : '';
+      const txt = document.getElementById('cloudAlertText');
+      if (txt) txt.textContent = `⚠ 有變更尚未成功備份到雲端硬碟${last ? `（上次成功：${last}）` : ''}，請按「立即備份」補上。`;
     }
   }
 }
@@ -2346,6 +2359,7 @@ document.getElementById('cloudConnectBtn').addEventListener('click', () => cloud
 document.getElementById('cloudSwitchBtn').addEventListener('click', cloudSwitchAccount);
 document.getElementById('cloudDisconnectBtn').addEventListener('click', cloudDisconnect);
 document.getElementById('cloudBackupNowBtn').addEventListener('click', () => cloudBackupNow({ manual: true, interactive: true }));
+document.getElementById('cloudAlertBackupBtn').addEventListener('click', () => cloudBackupNow({ manual: true, interactive: true }));
 document.getElementById('cloudRestoreBtn').addEventListener('click', openRestorePicker);
 document.getElementById('closeRestorePickerBtn').addEventListener('click', closeRestorePicker);
 document.getElementById('confirmRestoreVersionBtn').addEventListener('click', confirmRestoreVersion);

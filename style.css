@@ -715,6 +715,28 @@ input:disabled {
   margin-left: auto;
 }
 
+.cloud-alert-card {
+  border: 1px solid color-mix(in srgb, var(--stage1) 32%, var(--card-bg));
+  background: color-mix(in srgb, var(--stage1) 13%, var(--card-bg));
+}
+
+.cloud-alert-card p {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--stage1);
+  font-weight: 600;
+}
+
+.cloud-alert-actions {
+  display: flex;
+}
+
+.cloud-alert-actions .primary-btn {
+  flex: none;
+  padding: 8px 16px;
+  font-size: 13px;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
