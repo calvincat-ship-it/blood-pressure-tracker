@@ -1,4 +1,4 @@
-const APP_VERSION = 'v28.02';
+const APP_VERSION = 'v29';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -128,6 +128,27 @@ function medTimesFor(date) {
   return (medLogs[date] || []).slice().sort();
 }
 
+// ---- Weight log ----
+// One weight (kg) per day, keyed by local date. Backed up alongside readings
+// and medication logs (cloud + local file). Recorded via the daily prompt or
+// manually from the ⚖️ header button.
+const WEIGHT_KEY = 'bp_weight_logs_v1';
+
+/** @returns {Object.<string,number>} map of date(YYYY-MM-DD) -> weight in kg */
+function loadWeightLogs() {
+  try {
+    return JSON.parse(localStorage.getItem(WEIGHT_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveWeightLogs(m) {
+  localStorage.setItem(WEIGHT_KEY, JSON.stringify(m));
+  maybeDailySnapshot();
+  scheduleCloudBackup();
+}
+
 // The most recent medication time taken at or before a reading's time on the
 // same day, or null if the reading was before that day's first dose.
 function lastMedBeforeReading(r) {
@@ -152,6 +173,7 @@ function loadSettings() {
     medReminderEnabled: false, medReminderTime: '08:00', medReminderOverdueMin: 30, medReminderRepeatMin: 30,
     reportName: '', reportId: '', rememberReportInfo: false,
     showManualOnOpen: false, manualSeenVersion: '',
+    weightPromptEnabled: true, weightPromptDate: '',
   };
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY)) };
@@ -241,6 +263,7 @@ const chartRangeSelect = document.getElementById('chartRange');
 
 let readings = loadReadings();
 let medLogs = loadMedLogs();
+let weightLogs = loadWeightLogs();
 let settings = loadSettings();
 let cloudState = loadCloudState();
 let suppressCloud = false; // set while applying a restore, to avoid a re-upload loop
@@ -691,12 +714,27 @@ const MANUAL_SECTIONS = [
       '介面會自動跟隨手機的淺色／深色模式：手機切到深色時，App 也會自動變成深色配色，不需另外設定。',
     ],
   },
+  {
+    t: '十、體重記錄',
+    lines: [
+      '每天第一次開啟 App 時，會主動跳出視窗詢問是否記錄今天的體重（單位：公斤 kg）；輸入後按「記錄體重」即可，或按「略過」關閉。',
+      '也可隨時點標題列的 ⚖️ 開啟體重記錄視窗，補登或修改今日體重。',
+      '同一天再次記錄會覆蓋當天的體重；視窗下方會列出過往每天的體重，以及相較前一筆的增減（kg）。',
+      '若不想每天被詢問，可到「設定 → ⏰ 提醒設定 → 每日體重記錄提醒」關閉自動詢問；仍可隨時用 ⚖️ 手動記錄。',
+      '體重資料會一併納入雲端備份與本機備份檔。',
+    ],
+  },
 ];
 
 // Short per-version highlights shown once after an update (instead of the full
 // manual). Key by APP_VERSION; keep only recent entries. Falls back to a generic
 // note if the running version has no explicit entry.
 const WHATS_NEW = {
+  'v29': [
+    '新增體重記錄：每天第一次開啟 App 時，會主動詢問是否記錄今天的體重（公斤）。',
+    '可從標題列的 ⚖️ 隨時開啟體重記錄視窗，補登或修改今日體重，並查看過往紀錄與每日增減。',
+    '不想每天被詢問，可到「設定 → ⏰ 提醒設定 → 每日體重記錄提醒」關閉；體重資料也會一併納入雲端與本機備份。',
+  ],
   'v28.02': [
     '為節省儲存空間，照片現在僅保留最新的 30 張；超過後較舊的照片會自動刪除，該筆紀錄的血壓數值與備註仍完整保留，只有照片會被移除。',
     '此規則同時套用於手機本機與雲端／本機備份，讓備份檔不會因照片過多而變得龐大。',
@@ -1051,6 +1089,7 @@ function closeManual() {
     settings.manualSeenVersion = APP_VERSION;
     saveSettings(settings);
   }
+  maybeWeightPrompt(); // retry the daily weight prompt now this modal is gone
 }
 
 function printManual() {
@@ -1130,12 +1169,127 @@ function closeWhatsNew() {
     settings.manualSeenVersion = APP_VERSION;
     saveSettings(settings);
   }
+  maybeWeightPrompt(); // retry the daily weight prompt now this modal is gone
 }
 
 document.getElementById('closeWhatsNewBtn').addEventListener('click', closeWhatsNew);
 document.getElementById('whatsNewOkBtn').addEventListener('click', closeWhatsNew);
 document.getElementById('whatsNewModal').addEventListener('click', (e) => {
   if (e.target.id === 'whatsNewModal') closeWhatsNew();
+});
+
+// ---- Daily weight prompt ----
+// On the first operation of the app each day, proactively ask whether to record
+// today's weight (kg). Controlled by settings.weightPromptEnabled (default on);
+// settings.weightPromptDate records the last day we prompted, so it only fires
+// once per day. The same modal doubles as the manual weight manager (⚖️ header
+// button): record/update today's weight and review or delete past entries.
+
+const weightModal = document.getElementById('weightModal');
+
+function todayWeight() {
+  const w = weightLogs[todayStr()];
+  return typeof w === 'number' ? w : null;
+}
+
+function renderWeightList() {
+  const listEl = document.getElementById('weightList');
+  const dates = Object.keys(weightLogs)
+    .filter(d => typeof weightLogs[d] === 'number')
+    .sort()
+    .reverse();
+  if (dates.length === 0) {
+    listEl.innerHTML = '<p class="empty-state">尚無體重紀錄。</p>';
+    return;
+  }
+  listEl.innerHTML = dates.slice(0, 60).map((d, i) => {
+    const w = weightLogs[d];
+    const prev = i + 1 < dates.length ? weightLogs[dates[i + 1]] : null;
+    let delta = '';
+    if (typeof prev === 'number') {
+      const diff = Math.round((w - prev) * 10) / 10;
+      if (diff !== 0) {
+        const sign = diff > 0 ? '+' : '';
+        delta = `<span class="weight-delta ${diff > 0 ? 'up' : 'down'}">${sign}${diff}</span>`;
+      }
+    }
+    return `<div class="weight-item">
+      <span class="weight-date">${d}</span>
+      <span class="weight-val">${w} kg${delta}</span>
+      <button type="button" class="text-danger-btn weight-del" data-date="${d}" aria-label="刪除 ${d} 體重紀錄">刪除</button>
+    </div>`;
+  }).join('');
+}
+
+function openWeightModal({ prompt = false } = {}) {
+  const input = document.getElementById('weightInput');
+  const existing = todayWeight();
+  input.value = existing != null ? existing : '';
+  document.getElementById('weightModalDate').textContent = todayStr();
+  document.getElementById('weightPromptHint').hidden = !prompt;
+  renderWeightList();
+  closeSettings();
+  weightModal.hidden = false;
+  // Mark today as prompted on show, so dismissing without recording won't re-ask.
+  if (prompt && settings.weightPromptDate !== todayStr()) {
+    settings.weightPromptDate = todayStr();
+    saveSettings(settings);
+  }
+  setTimeout(() => { try { input.focus(); } catch {} }, 50);
+}
+
+function closeWeightModal() {
+  weightModal.hidden = true;
+}
+
+function saveTodayWeight() {
+  const raw = document.getElementById('weightInput').value.trim();
+  if (raw === '') {
+    showToast('請輸入體重');
+    return;
+  }
+  const w = Number(raw);
+  if (!Number.isFinite(w) || w <= 0 || w > 500) {
+    showToast('請輸入有效的體重（1～500 kg）');
+    return;
+  }
+  const val = Math.round(w * 10) / 10;
+  weightLogs[todayStr()] = val;
+  saveWeightLogs(weightLogs);
+  renderWeightList();
+  showToast(`已記錄今日體重 ${val} kg`);
+}
+
+function removeWeight(date) {
+  if (!confirm(`確定要刪除「${date}」的體重紀錄嗎？`)) return;
+  delete weightLogs[date];
+  saveWeightLogs(weightLogs);
+  renderWeightList();
+}
+
+// Show the once-a-day prompt on the first operation of the day — unless it is
+// disabled, already recorded/prompted today, or another modal is already open
+// (don't stack on the what's-new / manual view; their close handlers retry, so
+// the prompt still appears once those are dismissed).
+function maybeWeightPrompt() {
+  if (!settings.weightPromptEnabled) return;
+  if (settings.weightPromptDate === todayStr()) return;
+  if (todayWeight() != null) return;
+  if (document.querySelector('.modal-backdrop:not([hidden])')) return;
+  openWeightModal({ prompt: true });
+}
+
+document.getElementById('weightBtn').addEventListener('click', () => openWeightModal());
+document.getElementById('closeWeightBtn').addEventListener('click', closeWeightModal);
+document.getElementById('saveWeightBtn').addEventListener('click', saveTodayWeight);
+document.getElementById('skipWeightBtn').addEventListener('click', closeWeightModal);
+weightModal.addEventListener('click', (e) => { if (e.target === weightModal) closeWeightModal(); });
+document.getElementById('weightList').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-date]');
+  if (btn) removeWeight(btn.dataset.date);
+});
+document.getElementById('weightInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); saveTodayWeight(); }
 });
 
 // After a version update, show the compact "本次更新內容" once; otherwise fall
@@ -1461,6 +1615,7 @@ function openSettings() {
   document.getElementById('settingMedReminderOverdue').value = settings.medReminderOverdueMin;
   document.getElementById('settingMedReminderRepeat').value = settings.medReminderRepeatMin;
   document.getElementById('settingManualOnOpen').checked = !!settings.showManualOnOpen;
+  document.getElementById('settingWeightPromptEnabled').checked = settings.weightPromptEnabled !== false;
   toggleCustomDaysRow();
   toggleHighBpCustomRow();
   toggleExportCustomRow();
@@ -1534,6 +1689,7 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
   settings.medReminderOverdueMin = Math.max(0, Number(document.getElementById('settingMedReminderOverdue').value) || 0);
   settings.medReminderRepeatMin = Math.max(5, Number(document.getElementById('settingMedReminderRepeat').value) || 30);
   settings.showManualOnOpen = document.getElementById('settingManualOnOpen').checked;
+  settings.weightPromptEnabled = document.getElementById('settingWeightPromptEnabled').checked;
 
   saveSettings(settings);
   closeSettings();
@@ -1571,10 +1727,11 @@ async function buildBackupObject() {
     if (blob) photos[id] = await blobToDataUrl(blob);
   }
   return {
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
     readings,
     medLogs,
+    weightLogs,
     settings,
     photos,
   };
@@ -1629,6 +1786,8 @@ async function applyBackupObject(data) {
     saveReadings(readings);
     medLogs = (data.medLogs && typeof data.medLogs === 'object') ? data.medLogs : {};
     saveMedLogs(medLogs);
+    weightLogs = (data.weightLogs && typeof data.weightLogs === 'object') ? data.weightLogs : {};
+    saveWeightLogs(weightLogs);
     if (data.settings) {
       settings = { ...loadSettings(), ...data.settings };
       saveSettings(settings);
@@ -2239,11 +2398,13 @@ async function clearAllLocalData() {
     await deletePhotos(ids).catch(() => {});
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(MED_KEY);
+    localStorage.removeItem(WEIGHT_KEY);
     localStorage.removeItem(SETTINGS_KEY);
     localStorage.removeItem(FIRED_SLOTS_KEY);
     localStorage.removeItem(MED_REMINDER_STATE_KEY);
     readings = loadReadings();   // []
     medLogs = loadMedLogs();     // {}
+    weightLogs = loadWeightLogs(); // {}
     settings = loadSettings();   // defaults
     resetForm();
     renderAll();
@@ -2310,8 +2471,10 @@ async function clearLocalRecords() {
     await deletePhotos(ids).catch(() => {});
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(MED_KEY);
+    localStorage.removeItem(WEIGHT_KEY);
     readings = loadReadings();
     medLogs = loadMedLogs();
+    weightLogs = loadWeightLogs();
     resetForm();
     renderAll();
   } finally {
@@ -2958,6 +3121,7 @@ function handleDayRollover() {
   if (today !== activeDay) {
     activeDay = today;
     renderAll();
+    maybeWeightPrompt(); // new day while the app stays open → prompt once
   }
 }
 
@@ -2979,6 +3143,9 @@ resetForm();
 renderAll();
 document.getElementById('appVersion').textContent = `版本 ${APP_VERSION}`;
 maybeShowManualOnStart();
+maybeWeightPrompt(); // first operation of the day → ask about recording weight
+                     // (skips itself if the what's-new/manual modal is showing;
+                     //  those modals' close handlers retry it)
 
 // Prune photos beyond the newest MAX_PHOTOS on startup too, so data that
 // predates this cap (or arrived via an old backup) gets cleaned up and the

@@ -20,6 +20,7 @@
   <div class="header-actions">
     <button id="chartBtn" class="icon-btn" title="趨勢圖" aria-label="趨勢圖">📈</button>
     <button id="historyBtn" class="icon-btn" title="歷史紀錄" aria-label="歷史紀錄">📋</button>
+    <button id="weightBtn" class="icon-btn" title="體重記錄" aria-label="體重記錄">⚖️</button>
     <button id="settingsBtn" class="icon-btn" title="設定" aria-label="設定">⚙</button>
   </div>
 </header>
@@ -251,6 +252,15 @@
             </label>
           </div>
           <p class="settings-meta">超過「用藥時間＋逾時分鐘」仍未記錄服藥時開始提醒，並依提醒間隔重複；一旦按下「記錄現在服藥」即自動停止，隔天再重新判斷。此頁面需保持開啟（可切到背景分頁）才能提醒。</p>
+
+          <hr class="settings-divider">
+
+          <h3 class="settings-section-title">每日體重記錄提醒</h3>
+          <label class="checkbox-row">
+            <input type="checkbox" id="settingWeightPromptEnabled">
+            每天第一次開啟 App 時，主動詢問是否記錄體重
+          </label>
+          <p class="settings-meta">關閉後就不會每天自動詢問；仍可隨時從標題列的 ⚖️ 開啟體重記錄視窗手動新增或查看。</p>
         </div>
       </details>
 
@@ -462,6 +472,26 @@
     <div class="form-actions">
       <button type="button" id="whatsNewOkBtn" class="primary-btn">我知道了</button>
     </div>
+  </div>
+</div>
+
+<div id="weightModal" class="modal-backdrop" hidden>
+  <div class="modal-sheet">
+    <div class="modal-header">
+      <h2>體重記錄</h2>
+      <button type="button" id="closeWeightBtn" class="icon-btn" aria-label="關閉">✕</button>
+    </div>
+    <p class="settings-meta" id="weightPromptHint" hidden>今天還沒記錄體重，要現在記錄嗎？不需要可直接關閉略過。</p>
+    <label class="full">
+      <span>今日體重（<span id="weightModalDate"></span>）<span class="unit">kg</span></span>
+      <input type="number" id="weightInput" inputmode="decimal" step="0.1" min="1" max="500" placeholder="例如 65.5">
+    </label>
+    <div class="form-actions">
+      <button type="button" id="saveWeightBtn" class="primary-btn">記錄體重</button>
+      <button type="button" id="skipWeightBtn" class="secondary-btn">略過</button>
+    </div>
+    <h3 class="settings-section-title">過往體重紀錄</h3>
+    <div id="weightList" class="weight-list"></div>
   </div>
 </div>
 
