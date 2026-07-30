@@ -117,7 +117,12 @@
   <section class="card med-card" id="medCard">
     <h2>用藥記錄</h2>
     <p id="medTodayStatus" class="med-status"></p>
-    <button type="button" id="logMedBtn" class="primary-btn med-log-btn">💊 記錄現在服藥</button>
+    <div class="med-time-row">
+      <label for="medTimeInput">用藥時間</label>
+      <input type="time" id="medTimeInput" class="med-time-input">
+      <button type="button" id="medTimeNowBtn" class="secondary-btn med-time-now-btn">現在</button>
+    </div>
+    <button type="button" id="logMedBtn" class="primary-btn med-log-btn">💊 記錄服藥</button>
     <div id="medTodayList" class="med-today-list"></div>
   </section>
 </main>

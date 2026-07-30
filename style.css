@@ -511,6 +511,27 @@ input:disabled {
 .med-status-pending { color: var(--stage1); font-weight: 600; }
 .med-status-done { color: var(--normal); font-weight: 600; }
 
+.med-time-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.med-time-row label {
+  font-size: 13px;
+  color: var(--text-muted);
+  flex: none;
+}
+.med-time-input {
+  flex: 1;
+  min-width: 0;
+}
+.med-time-now-btn {
+  flex: none;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
 .med-log-btn {
   width: 100%;
   flex: none;

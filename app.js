@@ -1,4 +1,4 @@
-const APP_VERSION = 'v29';
+const APP_VERSION = 'v29.01';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -636,7 +636,8 @@ const MANUAL_SECTIONS = [
   {
     t: '三、用藥記錄',
     lines: [
-      '按「💊 記錄現在服藥」並確認後，即記下當下的服藥時間（需確認以避免誤觸）。',
+      '「用藥時間」欄位預設為現在時間；若服藥後過一段時間才補記錄，可直接改成實際的服藥時間，按「現在」可一鍵填回目前時間。',
+      '按「💊 記錄服藥」並確認後，即記下該欄位的服藥時間（需確認以避免誤觸）。',
       '已記錄的時間會以膠囊顯示，點 ✕ 並確認後可刪除。',
       '畫面每日 00:00 自動重置為「今日尚未記錄服藥」。',
       '歷史各天的服藥時間會完整保留，供醫師參考，不會被清除。',
@@ -730,6 +731,10 @@ const MANUAL_SECTIONS = [
 // manual). Key by APP_VERSION; keep only recent entries. Falls back to a generic
 // note if the running version has no explicit entry.
 const WHATS_NEW = {
+  'v29.01': [
+    '用藥記錄新增「用藥時間」欄位：預設為現在時間，若延遲一段時間才補記錄，可直接輸入實際的服藥時間。',
+    '按一下「現在」即可把時間一鍵填回目前時間。',
+  ],
   'v29': [
     '新增體重記錄：每天第一次開啟 App 時，會主動詢問是否記錄今天的體重（公斤）。',
     '可從標題列的 ⚖️ 隨時開啟體重記錄視窗，補登或修改今日體重，並查看過往紀錄與每日增減。',
@@ -1512,11 +1517,22 @@ document.getElementById('clearAllBtn').addEventListener('click', () => {
 
 // ---- Medication log ----
 
+function refreshMedTimeInput(force = false) {
+  const input = document.getElementById('medTimeInput');
+  if (!input) return;
+  // Default to the current device time, but don't clobber a value the user is
+  // actively editing (or has just adjusted) unless explicitly forced.
+  if (force || (!input.value && document.activeElement !== input)) {
+    input.value = localTimeStr();
+  }
+}
+
 function renderMedCard() {
   const today = todayStr();
   const times = medTimesFor(today);
   const status = document.getElementById('medTodayStatus');
   const listEl = document.getElementById('medTodayList');
+  refreshMedTimeInput();
   if (times.length === 0) {
     status.textContent = '今日尚未記錄服藥，服藥後請按下按鈕。';
     status.className = 'med-status med-status-pending';
@@ -1532,12 +1548,18 @@ function renderMedCard() {
 
 function logMedicationNow() {
   const date = todayStr();
-  const time = new Date().toTimeString().slice(0, 5);
-  if (!confirm(`確定要記錄「現在（${time}）服藥」嗎？`)) return;
+  const input = document.getElementById('medTimeInput');
+  let time = input && input.value ? input.value : localTimeStr();
+  if (!/^\d{2}:\d{2}$/.test(time)) {
+    alert('請輸入有效的用藥時間。');
+    return;
+  }
+  if (!confirm(`確定要記錄「${time} 服藥」嗎？`)) return;
   const list = medLogs[date] || [];
   list.push(time);
   medLogs[date] = list;
   saveMedLogs(medLogs);
+  refreshMedTimeInput(true); // reset back to current time for the next entry
   renderMedCard();
   renderHistory();
   closeMedReminderNotifications();
@@ -1558,6 +1580,7 @@ function removeMedTime(date, time) {
 }
 
 document.getElementById('logMedBtn').addEventListener('click', logMedicationNow);
+document.getElementById('medTimeNowBtn').addEventListener('click', () => refreshMedTimeInput(true));
 
 document.getElementById('medTodayList').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-time]');
