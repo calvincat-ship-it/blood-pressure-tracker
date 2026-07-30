@@ -1,4 +1,4 @@
-const APP_VERSION = 'v29.01';
+const APP_VERSION = 'v29.02';
 const STORAGE_KEY = 'bp_records_v1';
 const SETTINGS_KEY = 'bp_settings_v1';
 const PHOTO_DB_NAME = 'bp_photos_db';
@@ -636,7 +636,7 @@ const MANUAL_SECTIONS = [
   {
     t: '三、用藥記錄',
     lines: [
-      '「用藥時間」欄位預設為現在時間；若服藥後過一段時間才補記錄，可直接改成實際的服藥時間，按「現在」可一鍵填回目前時間。',
+      '「用藥時間」欄位預設為現在時間；若服藥後過一段時間才補記錄，可直接改成實際的服藥時間，按「現在」可一鍵填回目前時間。用藥時間不可晚於現在時間。',
       '按「💊 記錄服藥」並確認後，即記下該欄位的服藥時間（需確認以避免誤觸）。',
       '已記錄的時間會以膠囊顯示，點 ✕ 並確認後可刪除。',
       '畫面每日 00:00 自動重置為「今日尚未記錄服藥」。',
@@ -731,6 +731,9 @@ const MANUAL_SECTIONS = [
 // manual). Key by APP_VERSION; keep only recent entries. Falls back to a generic
 // note if the running version has no explicit entry.
 const WHATS_NEW = {
+  'v29.02': [
+    '用藥時間新增限制：不可晚於現在時間，避免不小心記到未來的時間。',
+  ],
   'v29.01': [
     '用藥記錄新增「用藥時間」欄位：預設為現在時間，若延遲一段時間才補記錄，可直接輸入實際的服藥時間。',
     '按一下「現在」即可把時間一鍵填回目前時間。',
@@ -1520,10 +1523,12 @@ document.getElementById('clearAllBtn').addEventListener('click', () => {
 function refreshMedTimeInput(force = false) {
   const input = document.getElementById('medTimeInput');
   if (!input) return;
+  const now = localTimeStr();
+  input.max = now; // native hint: medication time can't be later than now (today)
   // Default to the current device time, but don't clobber a value the user is
   // actively editing (or has just adjusted) unless explicitly forced.
   if (force || (!input.value && document.activeElement !== input)) {
-    input.value = localTimeStr();
+    input.value = now;
   }
 }
 
@@ -1552,6 +1557,10 @@ function logMedicationNow() {
   let time = input && input.value ? input.value : localTimeStr();
   if (!/^\d{2}:\d{2}$/.test(time)) {
     alert('請輸入有效的用藥時間。');
+    return;
+  }
+  if (time > localTimeStr()) {
+    alert('用藥時間不可晚於現在時間，請重新輸入。');
     return;
   }
   if (!confirm(`確定要記錄「${time} 服藥」嗎？`)) return;
